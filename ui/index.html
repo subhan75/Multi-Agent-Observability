@@ -107,7 +107,7 @@
 
   <div class="stack">
     <section class="panel">
-      <div class="bar"><span id="status">Idle</span><span id="clock"></span>
+      <div class="bar"><span id="status">Idle</span><span id="clock"></span><span id="trace"></span>
         <span>· Click a component to filter the timeline.</span></div>
       <svg id="graph" viewBox="0 0 900 440" role="img" aria-label="Architecture graph"></svg>
     </section>
@@ -146,6 +146,7 @@ const KIND_LABEL = { step_start: "step", step_end: "step", step_error: "error", 
                      tool_call: "tool call", retrieval: "retrieval", db_read: "DB read",
                      request_done: "done", request_error: "failed" };
 
+const GRAFANA = "http://localhost:3000";   // Grafana runs in Docker on this computer (Phase 2)
 const $ = (id) => document.getElementById(id);
 const svgNS = "http://www.w3.org/2000/svg";
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -191,7 +192,7 @@ function resetView(question) {
   drawGraph();
   $("timeline").replaceChildren();
   $("answer").style.display = "none"; $("answer").classList.remove("error");
-  $("clock").textContent = "";
+  $("clock").textContent = ""; $("trace").replaceChildren();
 }
 function toggleFilter(id) {
   view.filter = view.filter === id ? null : id;
@@ -237,11 +238,23 @@ function fillCard(card, ev, inputPayload) {
   if (ev.caller) { const c = document.createElement("h3"); c.textContent = "Called by: " + ev.caller; body.appendChild(c); }
 }
 
+// ---------- Link to the OpenTelemetry trace of this request ----------
+function showTrace(traceId) {
+  const pane = { a: { datasource: "tempo", range: { from: "now-6h", to: "now" },
+    queries: [{ refId: "A", datasource: { type: "tempo", uid: "tempo" }, queryType: "traceql", query: traceId }] } };
+  const url = GRAFANA + "/explore?schemaVersion=1&orgId=1&panes=" + encodeURIComponent(JSON.stringify(pane));
+  const a = document.createElement("a");
+  a.href = url; a.target = "_blank"; a.rel = "noopener";
+  a.textContent = "trace " + traceId.slice(0, 8) + "… ↗ open in Grafana";
+  $("trace").replaceChildren(" · ", a);
+}
+
 // ---------- Apply one event to the view ----------
 function apply(ev) {
   if (view.t0 === null) view.t0 = ev.ts;
   $("clock").textContent = "elapsed " + (ev.ts - view.t0).toFixed(2) + "s";
   const id = ev.component;
+  if (ev.payload && ev.payload.trace_id) showTrace(ev.payload.trace_id);
   lightEdge(ev.caller, id);
 
   if (ev.kind === "step_start") {
