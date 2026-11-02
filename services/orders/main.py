@@ -1,4 +1,5 @@
 """Orders service: order lookup, enriched with stock info (port 8001)."""
+import logging
 from contextlib import asynccontextmanager
 
 import httpx
@@ -10,6 +11,8 @@ from services.common.db import connect
 from services.common.events import current_headers, emit_event, install_event_middleware
 from services.common.metrics import install_metrics
 from services.common.telemetry import instrument_app, setup_telemetry
+
+logger = logging.getLogger(__name__)
 
 DB = "orders.db"
 INVENTORY_URL = service_url("INVENTORY_URL", 8002)
@@ -59,8 +62,10 @@ async def get_order(order_id: int) -> Order:
         row = conn.cursor().execute("SELECT * FROM orders WHERE id = ?", (order_id,)).fetchone()
     emit_event("sqlite", "db_read", {"summary": f"orders[{order_id}] → {dict(row) if row else 'no row'}"}, caller="orders")
     if row is None:
+        logger.warning("order not found", extra={"order_id": order_id})
         raise HTTPException(status_code=404, detail=f"Order {order_id} not found")
     order = Order(**row)
+    logger.info("order found", extra={"order_id": order_id, "order_status": order.status, "sku": order.sku})
 
     # Service-to-service call: this hop is what distributed tracing will link up later.
     # current_headers() forwards the X-Request-ID so inventory joins the same request.
