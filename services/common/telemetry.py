@@ -1,4 +1,4 @@
-"""OpenTelemetry tracing, shared by every service (Phase 2).
+"""OpenTelemetry tracing (Phase 2) and metrics (Phase 3), shared by every service.
 
 What this gives us:
   * AUTOMATIC spans for every incoming web request (FastAPI), every outgoing HTTP call (httpx,
@@ -9,18 +9,22 @@ What this gives us:
   * Helpers for MANUAL spans around the things OTel cannot guess: agent steps, LLM calls, tools.
 
 Spans are batched and sent to the OpenTelemetry Collector, which forwards them to Tempo.
-If the Collector is down, services keep working; spans are simply dropped.
+Metrics (counters, histograms) are sent to the same Collector every 5 seconds; it exposes them on
+a page that Prometheus scrapes. If the Collector is down, services keep working; data is dropped.
 """
 import functools
 import os
 from collections.abc import Callable
 from typing import Any
 
-from opentelemetry import trace
+from opentelemetry import metrics, trace
+from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.sqlite3 import SQLite3Instrumentor
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
@@ -49,9 +53,18 @@ def setup_telemetry(service_name: str) -> None:
 
     # The Resource says WHO is producing the telemetry. `service.name` is how Tempo and Grafana
     # tell the gateway's spans from the orders service's spans.
-    provider = TracerProvider(resource=Resource.create({"service.name": service_name, "deployment.environment": "local"}))
-    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{endpoint.rstrip('/')}/v1/traces")))
+    base = endpoint.rstrip("/")
+    resource = Resource.create({"service.name": service_name, "deployment.environment": "local"})
+
+    # Traces: finished spans are batched and sent to the Collector.
+    provider = TracerProvider(resource=resource)
+    provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter(endpoint=f"{base}/v1/traces")))
     trace.set_tracer_provider(provider)
+
+    # Metrics: a reader wakes up every 5 s, collects the current value of every counter/histogram
+    # and sends them to the Collector. (Prometheus does the pulling; we PUSH to the Collector.)
+    reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=f"{base}/v1/metrics"), export_interval_millis=5000)
+    metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[reader]))
 
     HTTPXClientInstrumentor().instrument()   # spans for outgoing httpx calls + traceparent header
     SQLite3Instrumentor().instrument()       # spans for database queries
