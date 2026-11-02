@@ -91,9 +91,13 @@ groups:
           summary: "The code guardrail is overriding {{ $value | humanizePercentage }} of supervisor decisions"
 
       # --- Is our own telemetry pipeline healthy? ---------------------------------------------------
-      - alert: TelemetryBeingDropped
-        expr: sum by (exporter) (increase(otelcol_exporter_send_failed_spans_total[5m])) > 0
-        for: 1m
+      - alert: TelemetryExportBacklog
+        # A healthy Collector empties its export queue within a second or two. If the queue has
+        # NOT been empty at any moment for 2 minutes, it is stuck retrying a destination that is down.
+        # (We do not alert on a "failed exports" counter: the Collector retries for 5 minutes before
+        # counting a failure, which is far too slow to be useful.)
+        expr: min_over_time(otelcol_exporter_queue_size[2m]) > 0
+        for: 30s
         labels: { severity: warning }
         annotations:
-          summary: "The Collector failed to send spans to '{{ $labels.exporter }}' (is Tempo down?)"
+          summary: "The Collector cannot deliver {{ $labels.data_type }} to '{{ $labels.exporter }}' (is Tempo / Loki down?)"
