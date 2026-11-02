@@ -95,6 +95,7 @@ def supervisor(state: SupportState) -> SupportState:
     }
     with step("supervisor", state.get("last_step") or "gateway", {"received": seen}) as out:
         if steps > MAX_STEPS:
+            logger.warning("supervisor step limit reached, forcing writer", extra={"loop_count": steps})
             out.update(next_step="writer", summary="step limit reached → writer")
             return {"next_step": "writer", "steps": steps}
         decision = _ask("supervisor", prompts.SUPERVISOR.format(**seen), Decision)
@@ -105,8 +106,10 @@ def supervisor(state: SupportState) -> SupportState:
             out["llm_choice"] = choice
             choice = "writer"
             out["guardrail"] = "LLM re-picked a finished agent → overridden to writer"
+            logger.warning("guardrail overrode the supervisor", extra={"llm_choice": out["llm_choice"], "final_choice": choice})
         overridden = "guardrail" in out
         record_supervisor_decision(choice, overridden)
+        logger.info("supervisor decided", extra={"next_step": choice, "loop_count": steps, "guardrail_override": overridden})
         # Attach the decision to this node's span, so it is visible in the trace.
         set_span_attributes({"shopsense.next_step": choice, "shopsense.guardrail_override": overridden,
                              "shopsense.loop_count": steps})
