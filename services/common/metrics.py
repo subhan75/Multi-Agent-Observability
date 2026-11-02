@@ -57,6 +57,8 @@ NODE_DURATION = _meter.create_histogram(
     explicit_bucket_boundaries_advisory=LLM_BUCKETS)
 SUPERVISOR_DECISIONS = _meter.create_counter(
     "supervisor_decisions", unit="{decision}", description="Which step the supervisor chose")
+TOOL_CALLS = _meter.create_counter(
+    "agent_tool_calls", unit="{call}", description="Tool calls made by agents")
 
 # Paths we do not measure: our own event plumbing and the long-lived SSE streams (their "duration"
 # is meaningless and they would pin the in-flight gauge).
@@ -129,6 +131,11 @@ def track_node(node: str) -> Callable:
         return wrapper
 
     return decorator
+
+
+def record_tool_call(tool: str, outcome: str) -> None:
+    """Count one tool call. outcome is "ok", "not_found" (a normal answer: nothing matched) or "error"."""
+    TOOL_CALLS.add(1, {"tool": tool, "outcome": outcome})
 
 
 def record_supervisor_decision(choice: str, overridden: bool) -> None:
