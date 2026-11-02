@@ -1,7 +1,7 @@
 # Prometheus configuration. Reload without restarting: POST http://localhost:9090/-/reload
 global:
   scrape_interval: 5s       # how often to visit every target (15s is typical; 5s makes labs feel live)
-  evaluation_interval: 15s  # how often alert/recording rules run (unused until Phase 5)
+  evaluation_interval: 15s  # how often recording rules and alert rules are evaluated (infra/rules/)
 
 # Recording rules, alert rules and SLOs (Phase 5). Every .yml in this folder is loaded.
 rule_files:
