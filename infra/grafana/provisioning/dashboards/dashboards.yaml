@@ -1,6 +1,7 @@
 # Tells Grafana to load every dashboard JSON file found in the folder below, and to file them
-# under a "ShopSense" folder in the UI. Grafana re-reads the folder every 10 s, so you can edit a
-# JSON file and see the change without restarting anything.
+# under a "ShopSense" folder in the UI. Grafana re-checks the folder every 10 s, BUT on Docker Desktop for
+# Windows file changes inside a mounted folder are often not noticed. If you edit a dashboard JSON and
+# nothing changes, run:  docker compose restart grafana   (a fresh start always loads the current files).
 apiVersion: 1
 
 providers:
