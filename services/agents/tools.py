@@ -6,12 +6,14 @@ from langchain_core.tools import tool
 
 from services.common.config import service_url
 from services.common.events import current_headers, emit_event
+from services.common.telemetry import traced
 
 ORDERS_URL = service_url("ORDERS_URL", 8001)
 _http = httpx.Client(timeout=10)  # shared across calls; building a client per call is slow
 
 
 @tool
+@traced("tool.get_order")
 def get_order(order_id: int) -> str:
     """Look up an order by its numeric id. Returns status, quantity, sku and current stock."""
     started = time.perf_counter()

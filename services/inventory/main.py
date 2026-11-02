@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from services.common.db import connect
 from services.common.events import emit_event, install_event_middleware
 from services.common.metrics import install_metrics
+from services.common.telemetry import instrument_app, setup_telemetry
 
 DB = "inventory.db"
 SEED = [("sku-pencil", "Graphite Pencil", 120), ("sku-notebook", "A5 Notebook", 0), ("sku-eraser", "Eraser", 45)]
@@ -30,12 +31,15 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="inventory-service", lifespan=lifespan)
 install_event_middleware(app, component="inventory", caller="orders")
 install_metrics(app)
+setup_telemetry("inventory")
+instrument_app(app)
 
 
 @app.get("/stock/{sku}", response_model=StockItem)
 def get_stock(sku: str) -> StockItem:
     with connect(DB) as conn:
-        row = conn.execute("SELECT * FROM stock WHERE sku = ?", (sku,)).fetchone()
+        # conn.cursor().execute (not conn.execute): OpenTelemetry only traces queries made through a cursor
+        row = conn.cursor().execute("SELECT * FROM stock WHERE sku = ?", (sku,)).fetchone()
     emit_event("sqlite", "db_read", {"summary": f"stock[{sku}] → {dict(row) if row else 'no row'}"}, caller="inventory")
     if row is None:
         raise HTTPException(status_code=404, detail=f"Unknown sku {sku}")

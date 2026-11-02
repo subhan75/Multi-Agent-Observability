@@ -6,6 +6,10 @@ load_dotenv()  # must run before the graph module reads env vars
 from fastapi import FastAPI  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
+from services.common.telemetry import instrument_app, setup_telemetry  # noqa: E402
+
+setup_telemetry("agents")  # before importing the graph, which creates HTTP clients at import time
+
 from services.agents.graph import build_graph  # noqa: E402
 from services.common.events import install_event_middleware  # noqa: E402
 from services.common.metrics import install_metrics  # noqa: E402
@@ -13,6 +17,7 @@ from services.common.metrics import install_metrics  # noqa: E402
 app = FastAPI(title="agents-service")
 install_event_middleware(app)  # adopt the gateway's X-Request-ID for every event we emit
 install_metrics(app)
+instrument_app(app)
 graph = build_graph()  # compiled once, reused for every request
 
 

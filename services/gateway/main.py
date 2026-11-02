@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from services.common.config import service_url
 from services.common.events import REQUEST_ID_HEADER, make_event
 from services.common.metrics import install_metrics
+from services.common.telemetry import current_trace_id, instrument_app, setup_telemetry
 from services.gateway.store import EventStore
 
 AGENTS_URL = service_url("AGENTS_URL", 8003)
@@ -29,6 +30,8 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="gateway", lifespan=lifespan)
 install_metrics(app)
+setup_telemetry("gateway")
+instrument_app(app)
 store = EventStore()
 
 
@@ -43,9 +46,11 @@ async def support(body: Question) -> dict:
     request_id = body.request_id or uuid.uuid4().hex[:8]
     store.get_or_create(request_id, body.question)
     span_id = uuid.uuid4().hex[:8]
+    trace_id = current_trace_id()  # the OpenTelemetry trace id of this request (lets the UI link to Grafana)
     started = time.perf_counter()
 
-    store.add(make_event(request_id, "gateway", "step_start", {"question": body.question, "summary": body.question},
+    store.add(make_event(request_id, "gateway", "step_start",
+                         {"question": body.question, "summary": body.question, "trace_id": trace_id},
                          caller="user", span_id=span_id))
     try:
         resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question},
@@ -63,8 +68,8 @@ async def support(body: Question) -> dict:
     store.add(make_event(request_id, "gateway", "step_end", {"summary": "answer returned"},
                          duration_ms=elapsed, span_id=span_id))
     store.add(make_event(request_id, "gateway", "request_done",
-                         {"answer": result["answer"], "agent_steps": result["steps"]}, duration_ms=elapsed))
-    return {"request_id": request_id, **result}
+                         {"answer": result["answer"], "agent_steps": result["steps"], "trace_id": trace_id}, duration_ms=elapsed))
+    return {"request_id": request_id, "trace_id": trace_id, **result}
 
 
 @app.post("/internal/events")

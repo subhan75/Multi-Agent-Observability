@@ -24,6 +24,7 @@ from services.agents.rag import retrieve
 from services.agents.tools import get_order
 from services.common.events import emit_event, step
 from services.common.metrics import SUPERVISOR_DECISIONS, track_llm, track_node
+from services.common.telemetry import get_tracer, set_span_attributes, traced
 
 MAX_STEPS = 5  # safety net against supervisor loops
 DEFAULT_MODEL = "gemini-4-argon"
@@ -57,13 +58,17 @@ def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
     """Call Gemini once, reporting the prompt, response and latency as an event."""
     llm = _llm()
     started = time.perf_counter()
-    with track_llm(_model_name(), parent):  # Prometheus: count + time this call, even if it fails
-        if schema is None:
-            result = llm.invoke(prompt)
-            response = result.text  # `.text` flattens Gemini's content blocks into a plain string
-        else:
-            result = llm.with_structured_output(schema).invoke(prompt)
-            response = result.model_dump()
+    # OpenTelemetry: one span per Gemini call, labelled with the model and which agent asked.
+    with get_tracer().start_as_current_span("gemini.generate") as span:
+        span.set_attribute("gen_ai.request.model", _model_name())
+        span.set_attribute("shopsense.agent", parent)
+        with track_llm(_model_name(), parent):  # Prometheus: count + time this call, even if it fails
+            if schema is None:
+                result = llm.invoke(prompt)
+                response = result.text  # `.text` flattens Gemini's content blocks into a plain string
+            else:
+                result = llm.with_structured_output(schema).invoke(prompt)
+                response = result.model_dump()
     emit_event(
         "gemini", "llm_call",
         {"from": parent, "model": _model_name(), "prompt": prompt, "response": response,
@@ -74,6 +79,7 @@ def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
 
 
 @track_node("supervisor")
+@traced("agent.supervisor")
 def supervisor(state: SupportState) -> SupportState:
     steps = state.get("steps", 0) + 1
     seen = {
@@ -96,11 +102,15 @@ def supervisor(state: SupportState) -> SupportState:
             out["guardrail"] = "LLM re-picked a finished agent → overridden to writer"
         overridden = "guardrail" in out
         SUPERVISOR_DECISIONS.labels(choice, str(overridden).lower()).inc()
+        # Attach the decision to this node's span, so it is visible in the trace.
+        set_span_attributes({"shopsense.next_step": choice, "shopsense.guardrail_override": overridden,
+                             "shopsense.loop_count": steps})
         out.update(next_step=choice, summary=f"next → {choice}" + (" (guardrail override)" if overridden else ""))
     return {"next_step": choice, "steps": steps}
 
 
 @track_node("order_agent")
+@traced("agent.order_agent")
 def order_agent(state: SupportState) -> SupportState:
     with step("order_agent", "supervisor", {"question": state["question"]}) as out:
         agent = create_agent(_llm(), tools=[get_order], system_prompt=prompts.ORDER_AGENT)
@@ -111,9 +121,12 @@ def order_agent(state: SupportState) -> SupportState:
 
 
 @track_node("policy_agent")
+@traced("agent.policy_agent")
 def policy_agent(state: SupportState) -> SupportState:
     with step("policy_agent", "supervisor", {"question": state["question"]}) as out:
-        excerpts = retrieve(state["question"])
+        with get_tracer().start_as_current_span("kb.retrieve") as span:
+            excerpts = retrieve(state["question"])
+            span.set_attribute("shopsense.sections_returned", len(excerpts))
         emit_event("kb", "retrieval",
                    {"sections": [e.splitlines()[0] for e in excerpts], "summary": f"{len(excerpts)} policy sections"},
                    caller="policy_agent")
@@ -124,6 +137,7 @@ def policy_agent(state: SupportState) -> SupportState:
 
 
 @track_node("writer")
+@traced("agent.writer")
 def writer(state: SupportState) -> SupportState:
     with step("writer", "supervisor", {"order_info": state.get("order_info"), "policy_info": state.get("policy_info")}) as out:
         prompt = prompts.WRITER.format(

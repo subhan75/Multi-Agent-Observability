@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from typing import Any
 
 import httpx
+from opentelemetry.instrumentation.utils import suppress_instrumentation
 
 from services.common.config import service_url
 
@@ -72,7 +73,8 @@ def _drain_outbox() -> None:
         while True:
             event = _outbox.get()
             try:
-                client.post(f"{GATEWAY_URL}/internal/events", json=event)
+                with suppress_instrumentation():  # do not trace the tracing plumbing itself
+                    client.post(f"{GATEWAY_URL}/internal/events", json=event)
             except httpx.HTTPError:
                 pass  # observability must never break the app
 
