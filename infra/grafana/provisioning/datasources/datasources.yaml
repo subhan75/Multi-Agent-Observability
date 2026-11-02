@@ -1,0 +1,20 @@
+# Grafana reads this at startup, so the data sources exist without any clicking.
+# URLs use Docker service names (prometheus, tempo) because Grafana runs inside Docker too.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+
+  - name: Tempo
+    uid: tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    jsonData:
+      nodeGraph:
+        enabled: true           # draws the trace as a node graph as well as a waterfall

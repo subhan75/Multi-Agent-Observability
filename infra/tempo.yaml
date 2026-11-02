@@ -1,0 +1,29 @@
+# Tempo: the database that stores traces. Single-binary ("monolithic") mode with local disk
+# storage: simplest possible setup, perfect for learning.
+
+server:
+  http_listen_port: 3200        # Grafana (and our checks) query traces here
+
+distributor:
+  receivers:
+    otlp:                       # the Collector pushes spans in over OTLP
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m        # how long to buffer spans in memory before writing a block
+
+compactor:
+  compaction:
+    block_retention: 24h        # delete traces older than a day (this is a lab, not production)
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks

@@ -1,0 +1,35 @@
+# OpenTelemetry Collector: the "post office" between our services and the storage tools.
+# Our services send ALL telemetry here (one address). Where it goes next is decided by this
+# file, so we can change storage backends without touching any Python code.
+#
+#   services ──OTLP──► [ receivers ] ─► [ processors ] ─► [ exporters ] ──► Tempo (traces)
+
+receivers:
+  otlp:                       # "OTLP" = the OpenTelemetry wire protocol
+    protocols:
+      http:                   # our Python services use this one (port 4318)
+        endpoint: 0.0.0.0:4318
+      grpc:                   # the other flavour of OTLP (port 4317), for completeness
+        endpoint: 0.0.0.0:4317
+
+processors:
+  memory_limiter:             # safety valve: refuse data instead of running out of memory
+    check_interval: 1s
+    limit_mib: 256
+  batch:                      # group spans into batches: far fewer, bigger network sends
+    timeout: 2s
+
+exporters:
+  otlp/tempo:                 # send traces on to Tempo (inside the Docker network)
+    endpoint: tempo:4317
+    tls:
+      insecure: true          # plain text is fine inside our private Docker network
+  debug:                      # also print a short summary to the Collector's own log
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:                   # a pipeline = receivers -> processors -> exporters
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp/tempo, debug]
