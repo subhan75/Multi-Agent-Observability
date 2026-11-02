@@ -69,9 +69,17 @@ async def get_order(order_id: int) -> Order:
 
     # Service-to-service call: this hop is what distributed tracing will link up later.
     # current_headers() forwards the X-Request-ID so inventory joins the same request.
-    resp = await app.state.http.get(f"{INVENTORY_URL}/stock/{order.sku}", headers=current_headers())
+    try:
+        resp = await app.state.http.get(f"{INVENTORY_URL}/stock/{order.sku}", headers=current_headers())
+    except httpx.HTTPError:
+        # logger.exception records the full stack trace. We still re-raise: orders cannot answer
+        # properly without stock info (a known weakness, left as an exercise to degrade gracefully).
+        logger.exception("inventory service unreachable", extra={"order_id": order_id, "sku": order.sku})
+        raise
     if resp.status_code == 200:
         order.in_stock_now = resp.json()["quantity"]
+    else:
+        logger.warning("inventory returned an unexpected status", extra={"sku": order.sku, "inventory_status": resp.status_code})
     return order
 
 
