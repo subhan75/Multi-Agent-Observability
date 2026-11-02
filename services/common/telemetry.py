@@ -1,4 +1,4 @@
-"""OpenTelemetry tracing (Phase 2) and metrics (Phase 3), shared by every service.
+"""OpenTelemetry traces (Phase 2), metrics (Phase 3) and logs (Phase 4), shared by every service.
 
 What this gives us:
   * AUTOMATIC spans for every incoming web request (FastAPI), every outgoing HTTP call (httpx,
@@ -10,19 +10,26 @@ What this gives us:
 
 Spans are batched and sent to the OpenTelemetry Collector, which forwards them to Tempo.
 Metrics (counters, histograms) are sent to the same Collector every 5 seconds; it exposes them on
-a page that Prometheus scrapes. If the Collector is down, services keep working; data is dropped.
+a page that Prometheus scrapes. Python log records are sent the same way and the Collector forwards
+them to Loki; every log written inside a request automatically carries that request's trace id and
+span id. If the Collector is down, services keep working; data is dropped.
 """
 import functools
+import logging
 import os
 from collections.abc import Callable
 from typing import Any
 
 from opentelemetry import metrics, trace
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 from opentelemetry.instrumentation.sqlite3 import SQLite3Instrumentor
+from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -66,8 +73,39 @@ def setup_telemetry(service_name: str) -> None:
     reader = PeriodicExportingMetricReader(OTLPMetricExporter(endpoint=f"{base}/v1/metrics"), export_interval_millis=5000)
     metrics.set_meter_provider(MeterProvider(resource=resource, metric_readers=[reader]))
 
+    # Logs: Python's normal `logging` module, bridged into OpenTelemetry.
+    log_provider = LoggerProvider(resource=resource)
+    log_provider.add_log_record_processor(BatchLogRecordProcessor(OTLPLogExporter(endpoint=f"{base}/v1/logs")))
+    set_logger_provider(log_provider)
+    _setup_logging(log_provider)
+
     HTTPXClientInstrumentor().instrument()   # spans for outgoing httpx calls + traceparent header
     SQLite3Instrumentor().instrument()       # spans for database queries
+
+
+def _setup_logging(log_provider: LoggerProvider) -> None:
+    """Send every log record (INFO and above) to the console AND to OpenTelemetry."""
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+
+    # 1) Console: so you still see logs in the service's window. Uvicorn already prints its own
+    #    lines, so we skip its loggers here to avoid every line appearing twice.
+    console = logging.StreamHandler()
+    console.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
+    console.addFilter(lambda record: not record.name.startswith("uvicorn"))
+    root.addHandler(console)
+
+    # 2) OpenTelemetry: this handler turns each record into an OTel log, stamped with the trace id
+    #    and span id of whatever span is active at that moment. That stamp is what links logs to traces.
+    otel = LoggingHandler(level=logging.INFO, logger_provider=log_provider)
+    #    Never ship OpenTelemetry's own error messages through OpenTelemetry: if the Collector were
+    #    down, "failed to export" would itself be exported, fail, and log again, forever.
+    otel.addFilter(lambda record: not record.name.startswith("opentelemetry"))
+    root.addHandler(otel)
+
+    # Chatty libraries: their INFO lines (one per HTTP call!) would drown the useful logs.
+    for noisy in ("httpx", "httpcore", "urllib3", "opentelemetry"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def instrument_app(app) -> None:
