@@ -1,0 +1,99 @@
+# ALERT RULES: a query that, when it returns something for long enough, becomes a firing alert.
+#
+#   expr   the condition (anything the query returns is "true")
+#   for    how long it must stay true before firing. Until then the alert is PENDING.
+#          This prevents a single blip from paging someone.
+#   labels extra tags, we use `severity` to say how urgent it is
+#
+# In a real company a second program (Alertmanager) would route these to Slack/email/pager.
+# We deliberately skip it: here you WATCH alerts change state in Prometheus (Alerts page) and in
+# Grafana (Alerting -> Alert rules, and the "SLO and alerts" dashboard).
+#
+# Thresholds are tuned for this small lab and use short `for:` times so you can see them fire in a
+# couple of minutes. Real systems use longer ones.
+
+groups:
+  - name: shopsense_alerts
+    rules:
+      # --- Is every service still reporting? (replaces the old `up` check, see Phase 3 notes) ------
+      - alert: ServiceNotReporting
+        expr: absent(http_requests_in_flight{job="gateway"})
+        for: 30s
+        labels: { severity: critical, service: gateway }
+        annotations: { summary: "gateway has stopped reporting metrics" }
+      - alert: ServiceNotReporting
+        expr: absent(http_requests_in_flight{job="agents"})
+        for: 30s
+        labels: { severity: critical, service: agents }
+        annotations: { summary: "agents has stopped reporting metrics" }
+      - alert: ServiceNotReporting
+        expr: absent(http_requests_in_flight{job="orders"})
+        for: 30s
+        labels: { severity: critical, service: orders }
+        annotations: { summary: "orders has stopped reporting metrics" }
+      - alert: ServiceNotReporting
+        expr: absent(http_requests_in_flight{job="inventory"})
+        for: 30s
+        labels: { severity: critical, service: inventory }
+        annotations: { summary: "inventory has stopped reporting metrics" }
+
+      # --- RED: errors and duration -----------------------------------------------------------------
+      - alert: HighErrorRate
+        # more than 5% of requests failing, but only when there is real traffic (> 0.1 req/s)
+        expr: job:http_request_errors:ratio_rate1m > 0.05 and job:http_requests:rate1m > 0.1
+        for: 1m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value | humanizePercentage }} of requests fail with 5xx"
+          description: "Open the 'Services (RED)' dashboard, click an exemplar, then read the trace and its logs."
+
+      - alert: FastServiceLatencyHigh
+        # orders and inventory only do a database read: p95 above half a second is abnormal
+        expr: job_route:http_request_duration_seconds:p95_5m{job=~"orders|inventory"} > 0.5
+        for: 2m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.job }} {{ $labels.route }}: p95 latency is {{ $value | humanizeDuration }}"
+
+      # --- AI-specific ----------------------------------------------------------------------------------
+      - alert: LLMCallSlow
+        expr: caller:llm_call_duration_seconds:p95_5m > 20
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "Gemini calls from '{{ $labels.caller }}' have p95 latency of {{ $value | humanizeDuration }}"
+          description: "Check the model in use (GEMINI_MODEL) and Google's status; compare with the 'Agents and LLM' dashboard."
+
+      - alert: LLMCallErrors
+        expr: |
+          sum(rate(llm_calls_total{outcome="error"}[5m])) / sum(rate(llm_calls_total[5m])) > 0.1
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "More than 10% of Gemini calls are failing ({{ $value | humanizePercentage }})"
+          description: "Likely causes: invalid or expired API key, rate limit or quota exceeded, network trouble."
+
+      - alert: ToolCallErrors
+        expr: sum by (tool) (rate(agent_tool_calls_total{outcome="error"}[5m])) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "Tool '{{ $labels.tool }}' is failing (a 'not_found' answer is NOT counted as a failure)"
+
+      - alert: SupervisorGuardrailFiringOften
+        # the guardrail exists to catch the LLM repeating itself; if it fires a lot, the PROMPT needs work
+        expr: |
+          sum(rate(supervisor_decisions_total{guardrail_override="true"}[15m]))
+            / sum(rate(supervisor_decisions_total[15m])) > 0.2
+        for: 10m
+        labels: { severity: info }
+        annotations:
+          summary: "The code guardrail is overriding {{ $value | humanizePercentage }} of supervisor decisions"
+
+      # --- Is our own telemetry pipeline healthy? ---------------------------------------------------
+      - alert: TelemetryBeingDropped
+        expr: sum by (exporter) (increase(otelcol_exporter_send_failed_spans_total[5m])) > 0
+        for: 1m
+        labels: { severity: warning }
+        annotations:
+          summary: "The Collector failed to send spans to '{{ $labels.exporter }}' (is Tempo down?)"
