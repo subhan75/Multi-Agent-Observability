@@ -1,0 +1,96 @@
+# SERVICE LEVEL OBJECTIVES (SLOs)
+#
+# An SLO is a PROMISE about quality, measured over a long window. Ours (for the customer-facing
+# endpoint POST /support on the gateway):
+#
+#   SLO 1, AVAILABILITY: 99% of support requests succeed (do not answer 5xx), over 30 days.
+#   SLO 2, LATENCY:      95% of support requests finish in 60 seconds or less, over 30 days.
+#
+# Vocabulary:
+#   SLI           the thing we measure (e.g. "share of requests that failed")
+#   Error budget  how much failure the promise allows: 100% - 99% = 1% for availability.
+#   Burn rate     how fast we are using the budget. 1.0 = exactly on pace to use it all in the
+#                 window. 14.4 = we would use up 2% of a 30-day budget in ONE hour.
+#
+# Alerting on burn rate (instead of "errors > X") pages you when the promise is in danger, not on
+# every blip. The classic recipe pairs a LONG window (is it real?) with a SHORT one (is it still
+# happening?), so alerts both fire quickly and stop quickly.
+#
+# 30 days of data is more than a lab has, so these rules use the short windows (5m/30m/1h/6h)
+# that real burn-rate alerts use; they work fine on a small system.
+
+groups:
+  - name: shopsense_slo_recording
+    rules:
+      # ---- availability SLI: share of /support requests that failed (5xx) -------------------------
+      - record: slo:support_requests:error_ratio_rate5m
+        expr: |
+          (sum(rate(http_requests_total{job="gateway", route="/support", status=~"5.."}[5m])) or vector(0))
+          / sum(rate(http_requests_total{job="gateway", route="/support"}[5m]))
+      - record: slo:support_requests:error_ratio_rate30m
+        expr: |
+          (sum(rate(http_requests_total{job="gateway", route="/support", status=~"5.."}[30m])) or vector(0))
+          / sum(rate(http_requests_total{job="gateway", route="/support"}[30m]))
+      - record: slo:support_requests:error_ratio_rate1h
+        expr: |
+          (sum(rate(http_requests_total{job="gateway", route="/support", status=~"5.."}[1h])) or vector(0))
+          / sum(rate(http_requests_total{job="gateway", route="/support"}[1h]))
+      - record: slo:support_requests:error_ratio_rate6h
+        expr: |
+          (sum(rate(http_requests_total{job="gateway", route="/support", status=~"5.."}[6h])) or vector(0))
+          / sum(rate(http_requests_total{job="gateway", route="/support"}[6h]))
+
+      # burn rate = (share failing) / (share the SLO allows to fail = 1 - 0.99 = 0.01)
+      - record: slo:support_availability:burn_rate5m
+        expr: slo:support_requests:error_ratio_rate5m / 0.01
+      - record: slo:support_availability:burn_rate30m
+        expr: slo:support_requests:error_ratio_rate30m / 0.01
+      - record: slo:support_availability:burn_rate1h
+        expr: slo:support_requests:error_ratio_rate1h / 0.01
+      - record: slo:support_availability:burn_rate6h
+        expr: slo:support_requests:error_ratio_rate6h / 0.01
+
+      # ---- latency SLI: share of /support requests SLOWER than 60 s ------------------------------
+      # A histogram bucket `le="60"` counts requests that took <= 60 s, so slow share = 1 - that / total.
+      - record: slo:support_requests:slow_ratio_rate5m
+        expr: |
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{job="gateway", route="/support", le=~"60(\\.0)?"}[5m]))
+            / sum(rate(http_request_duration_seconds_count{job="gateway", route="/support"}[5m]))
+          )
+      - record: slo:support_requests:slow_ratio_rate1h
+        expr: |
+          1 - (
+            sum(rate(http_request_duration_seconds_bucket{job="gateway", route="/support", le=~"60(\\.0)?"}[1h]))
+            / sum(rate(http_request_duration_seconds_count{job="gateway", route="/support"}[1h]))
+          )
+      # allowed slow share = 1 - 0.95 = 0.05
+      - record: slo:support_latency:burn_rate5m
+        expr: slo:support_requests:slow_ratio_rate5m / 0.05
+      - record: slo:support_latency:burn_rate1h
+        expr: slo:support_requests:slow_ratio_rate1h / 0.05
+
+  - name: shopsense_slo_alerts
+    rules:
+      - alert: SupportAvailabilityBurnFast
+        # 14.4x for both 5 min AND 1 h: "we are burning the budget very fast, and still are"
+        expr: slo:support_availability:burn_rate5m > 14.4 and slo:support_availability:burn_rate1h > 14.4
+        for: 2m
+        labels: { severity: page, slo: support-availability }
+        annotations:
+          summary: "Support availability SLO burning at {{ $value | humanize }}x (2% of the monthly budget per hour)"
+
+      - alert: SupportAvailabilityBurnSlow
+        # a slower leak (6x) that still empties the budget in 5 days if left alone
+        expr: slo:support_availability:burn_rate30m > 6 and slo:support_availability:burn_rate6h > 6
+        for: 15m
+        labels: { severity: ticket, slo: support-availability }
+        annotations:
+          summary: "Support availability SLO is leaking budget at {{ $value | humanize }}x"
+
+      - alert: SupportLatencyBurnFast
+        expr: slo:support_latency:burn_rate5m > 14.4 and slo:support_latency:burn_rate1h > 14.4
+        for: 2m
+        labels: { severity: page, slo: support-latency }
+        annotations:
+          summary: "Support latency SLO (95% under 60 s) burning at {{ $value | humanize }}x"
