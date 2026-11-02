@@ -1,4 +1,5 @@
 """Inventory service: stock levels per product (port 8002)."""
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,8 @@ from services.common.db import connect
 from services.common.events import emit_event, install_event_middleware
 from services.common.metrics import install_metrics
 from services.common.telemetry import instrument_app, setup_telemetry
+
+logger = logging.getLogger(__name__)
 
 DB = "inventory.db"
 SEED = [("sku-pencil", "Graphite Pencil", 120), ("sku-notebook", "A5 Notebook", 0), ("sku-eraser", "Eraser", 45)]
@@ -42,6 +45,7 @@ def get_stock(sku: str) -> StockItem:
         row = conn.cursor().execute("SELECT * FROM stock WHERE sku = ?", (sku,)).fetchone()
     emit_event("sqlite", "db_read", {"summary": f"stock[{sku}] → {dict(row) if row else 'no row'}"}, caller="inventory")
     if row is None:
+        logger.warning("unknown sku requested", extra={"sku": sku})
         raise HTTPException(status_code=404, detail=f"Unknown sku {sku}")
     return StockItem(**row)
 
