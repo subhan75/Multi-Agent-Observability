@@ -23,7 +23,7 @@ from services.agents import prompts
 from services.agents.rag import retrieve
 from services.agents.tools import get_order
 from services.common.events import emit_event, step
-from services.common.metrics import SUPERVISOR_DECISIONS, track_llm, track_node
+from services.common.metrics import record_supervisor_decision, track_llm, track_node
 from services.common.telemetry import get_tracer, set_span_attributes, traced
 
 MAX_STEPS = 5  # safety net against supervisor loops
@@ -101,7 +101,7 @@ def supervisor(state: SupportState) -> SupportState:
             choice = "writer"
             out["guardrail"] = "LLM re-picked a finished agent → overridden to writer"
         overridden = "guardrail" in out
-        SUPERVISOR_DECISIONS.labels(choice, str(overridden).lower()).inc()
+        record_supervisor_decision(choice, overridden)
         # Attach the decision to this node's span, so it is visible in the trace.
         set_span_attributes({"shopsense.next_step": choice, "shopsense.guardrail_override": overridden,
                              "shopsense.loop_count": steps})
