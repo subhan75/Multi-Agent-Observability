@@ -104,7 +104,8 @@ def _setup_logging(log_provider: LoggerProvider) -> None:
     root.addHandler(otel)
 
     # Chatty libraries: their INFO lines (one per HTTP call!) would drown the useful logs.
-    for noisy in ("httpx", "httpcore", "urllib3", "opentelemetry"):
+    # ("google_genai" is Google's Gemini SDK: it logs "AFC is enabled..." before every single call.)
+    for noisy in ("httpx", "httpcore", "urllib3", "opentelemetry", "google_genai"):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
