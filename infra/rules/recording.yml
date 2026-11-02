@@ -1,0 +1,49 @@
+# RECORDING RULES: Prometheus evaluates these queries every 15 s and stores each result as a
+# brand-new metric. Why bother?
+#   * Dashboards and alerts become simple and fast (they read a ready-made number).
+#   * Everybody uses the SAME definition of "error ratio" or "p95".
+#
+# Naming convention:  level:metric:operations
+#   job:http_requests:rate1m   = "per job, the http_requests metric, as a 1-minute rate"
+#
+# The "or (... * 0)" trick below makes a service with ZERO errors report 0 instead of "no data".
+# (Without it, a healthy service has no 5xx series at all, so the division would give nothing.)
+
+groups:
+  - name: shopsense_recording
+    rules:
+      - record: job:http_requests:rate1m
+        expr: sum by (job) (rate(http_requests_total{route!="/health"}[1m]))
+
+      - record: job:http_request_errors:ratio_rate1m
+        expr: |
+          (
+              sum by (job) (rate(http_requests_total{status=~"5..", route!="/health"}[1m]))
+            or
+              sum by (job) (rate(http_requests_total{route!="/health"}[1m])) * 0
+          )
+          /
+          sum by (job) (rate(http_requests_total{route!="/health"}[1m]))
+
+      - record: job:http_request_errors:ratio_rate5m
+        expr: |
+          (
+              sum by (job) (rate(http_requests_total{status=~"5..", route!="/health"}[5m]))
+            or
+              sum by (job) (rate(http_requests_total{route!="/health"}[5m])) * 0
+          )
+          /
+          sum by (job) (rate(http_requests_total{route!="/health"}[5m]))
+
+      - record: job_route:http_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95,
+            sum by (job, route, le) (rate(http_request_duration_seconds_bucket{route!="/health"}[5m])))
+
+      - record: caller:llm_call_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (caller, le) (rate(llm_call_duration_seconds_bucket[5m])))
+
+      - record: node:agent_node_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(0.95, sum by (node, le) (rate(agent_node_duration_seconds_bucket[5m])))
