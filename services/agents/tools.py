@@ -7,6 +7,7 @@ from langchain_core.tools import tool
 
 from services.common.config import service_url
 from services.common.events import current_headers, emit_event
+from services.common.metrics import record_tool_call
 from services.common.telemetry import traced
 
 logger = logging.getLogger(__name__)
@@ -22,6 +23,9 @@ def get_order(order_id: int) -> str:
     started = time.perf_counter()
     resp = _http.get(f"{ORDERS_URL}/orders/{order_id}", headers=current_headers())
     result = f"No order found with id {order_id}." if resp.status_code == 404 else resp.text
+    # A 404 is a normal outcome ("no such order"), not a failure of the tool; only 5xx etc. count as errors.
+    outcome = "not_found" if resp.status_code == 404 else ("ok" if resp.is_success else "error")
+    record_tool_call("get_order", outcome)
     log = logger.warning if resp.status_code == 404 else logger.info
     log("tool get_order finished", extra={"order_id": order_id, "http_status": resp.status_code})
     emit_event(
