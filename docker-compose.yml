@@ -3,6 +3,7 @@
 #   Phase 2: + OpenTelemetry Collector, Tempo (traces), Grafana (viewer)
 #   Phase 3: metrics now flow  services -> Collector -> Prometheus  (with exemplars)
 #   Phase 4: + Loki (logs): services -> Collector -> Loki
+#   Phase 5: Prometheus loads recording/alert/SLO rules; Grafana loads 4 dashboards
 #
 # Start:  docker compose up -d        Stop:  docker compose down   (data survives; add -v to wipe it)
 #
@@ -23,6 +24,7 @@ services:
       - "127.0.0.1:9090:9090"
     volumes:
       - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./infra/rules:/etc/prometheus/rules:ro   # recording rules, alerts, SLOs (Phase 5)
       - prometheus-data:/prometheus
     extra_hosts:
       - "host.docker.internal:host-gateway"   # makes the name work on any Docker setup

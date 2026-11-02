@@ -3,6 +3,10 @@ global:
   scrape_interval: 5s       # how often to visit every target (15s is typical; 5s makes labs feel live)
   evaluation_interval: 15s  # how often alert/recording rules run (unused until Phase 5)
 
+# Recording rules, alert rules and SLOs (Phase 5). Every .yml in this folder is loaded.
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
 scrape_configs:
   # Prometheus watching itself: a good first target to query.
   - job_name: prometheus
