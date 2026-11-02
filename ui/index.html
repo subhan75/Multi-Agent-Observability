@@ -246,7 +246,15 @@ function showTrace(traceId) {
   const a = document.createElement("a");
   a.href = url; a.target = "_blank"; a.rel = "noopener";
   a.textContent = "trace " + traceId.slice(0, 8) + "… ↗ open in Grafana";
-  $("trace").replaceChildren(" · ", a);
+
+  // Same request, seen as LOGS: every log line any service wrote while handling this trace.
+  const logPane = { a: { datasource: "loki", range: { from: "now-6h", to: "now" },
+    queries: [{ refId: "A", datasource: { type: "loki", uid: "loki" }, queryType: "range",
+                expr: '{service_name=~".+"} | trace_id="' + traceId + '"' }] } };
+  const logs = document.createElement("a");
+  logs.href = GRAFANA + "/explore?schemaVersion=1&orgId=1&panes=" + encodeURIComponent(JSON.stringify(logPane));
+  logs.target = "_blank"; logs.rel = "noopener"; logs.textContent = "↗ logs";
+  $("trace").replaceChildren(" · ", a, " · ", logs);
 }
 
 // ---------- Apply one event to the view ----------
