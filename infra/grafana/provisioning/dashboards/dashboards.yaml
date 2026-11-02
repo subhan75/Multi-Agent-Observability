@@ -1,0 +1,8 @@
+# Tells Grafana to load every dashboard JSON file found in the folder below, at startup.
+apiVersion: 1
+
+providers:
+  - name: shopsense
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards   # mounted from infra/grafana/dashboards (see docker-compose.yml)
