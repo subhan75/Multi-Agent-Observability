@@ -125,6 +125,7 @@ def order_agent(state: SupportState) -> SupportState:
         result = agent.invoke({"messages": [HumanMessage(state["question"])]})
         info = result["messages"][-1].text
         out.update(order_info=info, summary=info[:90])
+        logger.info("order agent finished", extra={"answer_chars": len(info)})
     return {"order_info": info, "last_step": "order_agent"}
 
 
@@ -135,6 +136,7 @@ def policy_agent(state: SupportState) -> SupportState:
         with get_tracer().start_as_current_span("kb.retrieve") as span:
             excerpts = retrieve(state["question"])
             span.set_attribute("shopsense.sections_returned", len(excerpts))
+        logger.info("policy sections retrieved", extra={"sections_returned": len(excerpts)})
         emit_event("kb", "retrieval",
                    {"sections": [e.splitlines()[0] for e in excerpts], "summary": f"{len(excerpts)} policy sections"},
                    caller="policy_agent")
@@ -155,6 +157,7 @@ def writer(state: SupportState) -> SupportState:
         )
         answer = _ask("writer", prompt).text
         out.update(answer=answer, summary=answer[:90])
+        logger.info("writer produced the final answer", extra={"answer_chars": len(answer)})
     return {"answer": answer, "last_step": "writer"}
 
 
