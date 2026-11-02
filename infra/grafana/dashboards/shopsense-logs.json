@@ -31,7 +31,7 @@
         },
         "definition": "label_values(service_name)",
         "includeAll": true,
-        "allValue": ".*",
+        "allValue": ".+",
         "multi": true,
         "refresh": 2,
         "sort": 1,
