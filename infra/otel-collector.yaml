@@ -4,7 +4,8 @@
 #
 #   services ──OTLP──► [ receivers ] ─► [ processors ] ─► [ exporters ]
 #                                                          ├─ traces  ──► Tempo
-#                                                          └─ metrics ──► a /metrics page that Prometheus scrapes
+#                                                          ├─ metrics ──► a /metrics page that Prometheus scrapes
+#                                                          └─ logs    ──► Loki
 
 receivers:
   otlp:                       # "OTLP" = the OpenTelemetry wire protocol
@@ -30,6 +31,8 @@ exporters:
     endpoint: 0.0.0.0:8889
     enable_open_metrics: true # the text format that can carry EXEMPLARS (links from a metric to a trace)
     metric_expiration: 30s    # forget a series 30 s after its service stops reporting (see lab notes)
+  otlphttp/loki:              # NEW in Phase 4: push logs to Loki's built-in OTLP endpoint
+    endpoint: http://loki:3100/otlp
   debug:                      # also print a short summary to the Collector's own log
     verbosity: basic
 
@@ -43,6 +46,10 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [prometheus, debug]
+    logs:                     # NEW in Phase 4: the same receiver feeds a third pipeline
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlphttp/loki, debug]
   telemetry:                  # the Collector's OWN health numbers (spans received, dropped...)
     metrics:
       readers:

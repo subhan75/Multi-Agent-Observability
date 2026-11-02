@@ -1,0 +1,46 @@
+# Loki: the database that stores logs. Single-binary mode with local disk: the simplest setup,
+# fine for learning. (Loki indexes only LABELS, not the log text, which keeps it small and fast.)
+
+auth_enabled: false              # no multi-tenant login: this is a private local lab
+
+server:
+  http_listen_port: 3100         # Grafana queries here; the Collector pushes logs here (/otlp)
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13                # v13 is required for "structured metadata" (where trace ids live)
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  allow_structured_metadata: true
+  otlp_config:
+    resource_attributes:
+      # By default Loki would turn many resource attributes into LABELS, including
+      # service.instance.id: a new random value on every restart, which makes a new stream each time.
+      # We switch the defaults off and pick exactly the labels we want.
+      ignore_defaults: true
+      attributes_config:
+        - action: index_label
+          attributes:
+            - service.name
+            - deployment.environment
+
+analytics:
+  reporting_enabled: false

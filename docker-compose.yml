@@ -2,6 +2,7 @@
 #   Phase 1: Prometheus (metrics)
 #   Phase 2: + OpenTelemetry Collector, Tempo (traces), Grafana (viewer)
 #   Phase 3: metrics now flow  services -> Collector -> Prometheus  (with exemplars)
+#   Phase 4: + Loki (logs): services -> Collector -> Loki
 #
 # Start:  docker compose up -d        Stop:  docker compose down   (data survives; add -v to wipe it)
 #
@@ -38,6 +39,18 @@ services:
       - ./infra/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     depends_on:
       - tempo
+      - loki
+
+  loki:
+    image: grafana/loki:3.7.9
+    container_name: shopsense-loki
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    user: "0"                                 # run as root so the named volume is writable (lab only)
+    ports:
+      - "127.0.0.1:3100:3100"                 # Loki's API (Grafana and our checks query it here)
+    volumes:
+      - ./infra/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
 
   tempo:
     image: grafana/tempo:2.10.10
@@ -68,8 +81,10 @@ services:
     depends_on:
       - prometheus
       - tempo
+      - loki
 
 volumes:
   prometheus-data:
   tempo-data:
   grafana-data:
+  loki-data:

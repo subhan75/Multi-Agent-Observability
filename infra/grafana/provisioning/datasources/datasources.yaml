@@ -22,3 +22,26 @@ datasources:
     jsonData:
       nodeGraph:
         enabled: true           # draws the trace as a node graph as well as a waterfall
+      tracesToLogsV2:           # TRACE -> LOGS: a button on each span that opens that service's logs
+        datasourceUid: loki
+        spanStartTimeShift: -1m
+        spanEndTimeShift: 1m
+        customQuery: true
+        tags:
+          - key: service.name   # the span's service.name ...
+            value: service_name # ... is the Loki label service_name
+        query: '{$${__tags}} | trace_id="$${__span.traceId}"'
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    jsonData:
+      derivedFields:            # LOG -> TRACE: show a button on any log line that has a trace id
+        - name: TraceID
+          matcherType: label    # look in the log's labels / structured metadata, not in the text
+          matcherRegex: trace_id
+          url: '$${__value.raw}'
+          datasourceUid: tempo
+          urlDisplayLabel: Open trace
