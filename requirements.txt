@@ -1,0 +1,11 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+httpx==0.28.1
+pydantic==2.10.4
+python-dotenv==1.0.1
+langchain==1.4.6
+langchain-core==1.6.12
+langchain-google-genai==4.2.3
+langgraph==1.2.16
+langgraph-prebuilt==1.1.1
+prometheus-client==0.21.1

@@ -1,0 +1,65 @@
+# ---------- Secrets: never commit ----------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials*.json
+service-account*.json
+
+# ---------- Personal learning docs and notes (kept locally only) ----------
+docs/
+notes/
+*.notes.md
+CLAUDE.md
+.claude/
+.plans/
+
+# ---------- Python ----------
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---------- Local data and runtime output ----------
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.err
+*.out
+*.pid
+pids.txt
+
+# ---------- Docker / observability local state ----------
+# (named volumes live inside Docker, not in this folder; these guard against bind-mounted data)
+prometheus-data/
+tempo-data/
+grafana-data/
+loki-data/
+
+# ---------- Editors, OS and machine-specific files ----------
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Scratch and generated ----------
+scratch/
+tmp/
+*.tmp
+*.bak
+node_modules/
