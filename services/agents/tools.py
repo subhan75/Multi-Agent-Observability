@@ -21,7 +21,13 @@ _http = httpx.Client(timeout=10)  # shared across calls; building a client per c
 def get_order(order_id: int) -> str:
     """Look up an order by its numeric id. Returns status, quantity, sku and current stock."""
     started = time.perf_counter()
-    resp = _http.get(f"{ORDERS_URL}/orders/{order_id}", headers=current_headers())
+    try:
+        resp = _http.get(f"{ORDERS_URL}/orders/{order_id}", headers=current_headers())
+    except httpx.HTTPError:
+        # No response at all (orders is down or timed out): this is the most likely real failure.
+        record_tool_call("get_order", "error")
+        logger.exception("tool get_order could not reach orders", extra={"order_id": order_id})
+        raise
     result = f"No order found with id {order_id}." if resp.status_code == 404 else resp.text
     # A 404 is a normal outcome ("no such order"), not a failure of the tool; only 5xx etc. count as errors.
     outcome = "not_found" if resp.status_code == 404 else ("ok" if resp.is_success else "error")
