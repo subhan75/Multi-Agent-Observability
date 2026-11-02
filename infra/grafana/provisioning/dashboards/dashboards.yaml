@@ -1,8 +1,13 @@
-# Tells Grafana to load every dashboard JSON file found in the folder below, at startup.
+# Tells Grafana to load every dashboard JSON file found in the folder below, and to file them
+# under a "ShopSense" folder in the UI. Grafana re-reads the folder every 10 s, so you can edit a
+# JSON file and see the change without restarting anything.
 apiVersion: 1
 
 providers:
   - name: shopsense
+    folder: ShopSense
     type: file
+    allowUiUpdates: true          # you may tweak a dashboard in the UI (changes are lost on restart; export the JSON to keep them)
+    updateIntervalSeconds: 10
     options:
       path: /var/lib/grafana/dashboards   # mounted from infra/grafana/dashboards (see docker-compose.yml)
