@@ -1,0 +1,22 @@
+# Prometheus configuration. Reload without restarting: POST http://localhost:9090/-/reload
+global:
+  scrape_interval: 5s       # how often to visit every target (15s is typical; 5s makes labs feel live)
+  evaluation_interval: 15s  # how often alert/recording rules run (unused until Phase 5)
+
+scrape_configs:
+  # Prometheus watching itself: a good first target to query.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Our services run on the Windows host, not in Docker, so the container reaches them via
+  # host.docker.internal. Prometheus adds job="<name>" and instance="<host:port>" labels to
+  # everything it scrapes, which is why our metrics have no "service" label of their own.
+  - job_name: gateway
+    static_configs: [{ targets: ["host.docker.internal:8000"] }]
+  - job_name: orders
+    static_configs: [{ targets: ["host.docker.internal:8001"] }]
+  - job_name: inventory
+    static_configs: [{ targets: ["host.docker.internal:8002"] }]
+  - job_name: agents
+    static_configs: [{ targets: ["host.docker.internal:8003"] }]

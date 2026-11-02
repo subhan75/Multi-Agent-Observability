@@ -1,0 +1,21 @@
+# Observability stack. Phase 1: Prometheus only. Later phases add Grafana, Tempo, Loki, the OTel Collector.
+# Start:  docker compose up -d        Stop:  docker compose down   (data survives; add -v to wipe it)
+services:
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    container_name: shopsense-prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+      - --web.enable-lifecycle            # allows POST /-/reload after editing the config
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # makes the name work on any Docker setup
+
+volumes:
+  prometheus-data:
