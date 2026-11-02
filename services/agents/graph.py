@@ -9,6 +9,7 @@
 Every node reports what it received and produced via `step(...)` (see common/events.py),
 which is what powers the live "request X-ray" UI.
 """
+import logging
 import os
 import time
 from typing import Literal, TypedDict
@@ -25,6 +26,8 @@ from services.agents.tools import get_order
 from services.common.events import emit_event, step
 from services.common.metrics import record_supervisor_decision, track_llm, track_node
 from services.common.telemetry import get_tracer, set_span_attributes, traced
+
+logger = logging.getLogger(__name__)
 
 MAX_STEPS = 5  # safety net against supervisor loops
 DEFAULT_MODEL = "gemini-4-argon"
@@ -69,6 +72,8 @@ def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
             else:
                 result = llm.with_structured_output(schema).invoke(prompt)
                 response = result.model_dump()
+    logger.info("llm call finished", extra={"agent": parent, "model": _model_name(),
+                                           "duration_ms": round((time.perf_counter() - started) * 1000)})
     emit_event(
         "gemini", "llm_call",
         {"from": parent, "model": _model_name(), "prompt": prompt, "response": response,
