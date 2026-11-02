@@ -1,4 +1,5 @@
 """Gateway: public entry point (port 8000), event hub, and host of the X-ray UI."""
+import logging
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -15,6 +16,8 @@ from services.common.events import REQUEST_ID_HEADER, make_event
 from services.common.metrics import install_metrics
 from services.common.telemetry import current_trace_id, instrument_app, setup_telemetry
 from services.gateway.store import EventStore
+
+logger = logging.getLogger(__name__)
 
 AGENTS_URL = service_url("AGENTS_URL", 8003)
 UI_DIR = Path(__file__).resolve().parents[2] / "ui"
@@ -48,6 +51,7 @@ async def support(body: Question) -> dict:
     span_id = uuid.uuid4().hex[:8]
     trace_id = current_trace_id()  # the OpenTelemetry trace id of this request (lets the UI link to Grafana)
     started = time.perf_counter()
+    logger.info("support request received", extra={"request_id": request_id, "question_chars": len(body.question)})
 
     store.add(make_event(request_id, "gateway", "step_start",
                          {"question": body.question, "summary": body.question, "trace_id": trace_id},
@@ -65,6 +69,7 @@ async def support(body: Question) -> dict:
 
     result = resp.json()
     elapsed = (time.perf_counter() - started) * 1000
+    logger.info("support request finished", extra={"request_id": request_id, "duration_ms": round(elapsed), "agent_steps": result["steps"]})
     store.add(make_event(request_id, "gateway", "step_end", {"summary": "answer returned"},
                          duration_ms=elapsed, span_id=span_id))
     store.add(make_event(request_id, "gateway", "request_done",
