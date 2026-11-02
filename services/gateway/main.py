@@ -62,6 +62,7 @@ async def support(body: Question) -> dict:
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         elapsed = (time.perf_counter() - started) * 1000
+        logger.exception("agents service failed", extra={"request_id": request_id, "duration_ms": round(elapsed)})
         store.add(make_event(request_id, "gateway", "step_error", {"error": repr(exc)},
                              duration_ms=elapsed, span_id=span_id))
         store.add(make_event(request_id, "gateway", "request_error", {"error": repr(exc)}))
