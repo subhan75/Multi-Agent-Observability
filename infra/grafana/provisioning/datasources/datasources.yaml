@@ -9,6 +9,10 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    jsonData:
+      exemplarTraceIdDestinations:
+        - name: trace_id          # the exemplar label that holds the trace id
+          datasourceUid: tempo    # clicking the dot opens that trace in the Tempo data source
 
   - name: Tempo
     uid: tempo

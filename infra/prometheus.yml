@@ -9,14 +9,16 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # Our services run on the Windows host, not in Docker, so the container reaches them via
-  # host.docker.internal. Prometheus adds job="<name>" and instance="<host:port>" labels to
-  # everything it scrapes, which is why our metrics have no "service" label of their own.
-  - job_name: gateway
-    static_configs: [{ targets: ["host.docker.internal:8000"] }]
-  - job_name: orders
-    static_configs: [{ targets: ["host.docker.internal:8001"] }]
-  - job_name: inventory
-    static_configs: [{ targets: ["host.docker.internal:8002"] }]
-  - job_name: agents
-    static_configs: [{ targets: ["host.docker.internal:8003"] }]
+  # PHASE 3 CHANGE. In Phase 1 Prometheus visited each of our four services directly.
+  # Now the services push their metrics (OpenTelemetry) to the Collector, and Prometheus visits
+  # ONE place: the Collector's metrics page.
+  - job_name: otel-collector
+    honor_labels: true      # keep the `job` label the Collector already set (job="orders", "gateway"...)
+                            # instead of overwriting it with "otel-collector"
+    static_configs:
+      - targets: ["otel-collector:8889"]
+
+  # The Collector's own health numbers (how many spans/metrics it received, refused, dropped).
+  - job_name: otel-collector-internal
+    static_configs:
+      - targets: ["otel-collector:8888"]

@@ -1,6 +1,7 @@
 # Observability stack.
 #   Phase 1: Prometheus (metrics)
 #   Phase 2: + OpenTelemetry Collector, Tempo (traces), Grafana (viewer)
+#   Phase 3: metrics now flow  services -> Collector -> Prometheus  (with exemplars)
 #
 # Start:  docker compose up -d        Stop:  docker compose down   (data survives; add -v to wipe it)
 #
@@ -16,6 +17,7 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=7d
       - --web.enable-lifecycle            # allows POST /-/reload after editing the config
+      - --enable-feature=exemplar-storage # keep exemplars (metric -> trace links); off by default
     ports:
       - "127.0.0.1:9090:9090"
     volumes:
@@ -31,6 +33,7 @@ services:
     ports:
       - "127.0.0.1:4318:4318"                 # OTLP over HTTP: where our Python services send telemetry
       - "127.0.0.1:4317:4317"                 # OTLP over gRPC
+      - "127.0.0.1:8889:8889"                 # the metrics page Prometheus scrapes (published only for our own checks)
     volumes:
       - ./infra/otel-collector.yaml:/etc/otelcol/config.yaml:ro
     depends_on:

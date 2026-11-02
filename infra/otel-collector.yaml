@@ -2,7 +2,9 @@
 # Our services send ALL telemetry here (one address). Where it goes next is decided by this
 # file, so we can change storage backends without touching any Python code.
 #
-#   services ──OTLP──► [ receivers ] ─► [ processors ] ─► [ exporters ] ──► Tempo (traces)
+#   services ──OTLP──► [ receivers ] ─► [ processors ] ─► [ exporters ]
+#                                                          ├─ traces  ──► Tempo
+#                                                          └─ metrics ──► a /metrics page that Prometheus scrapes
 
 receivers:
   otlp:                       # "OTLP" = the OpenTelemetry wire protocol
@@ -16,7 +18,7 @@ processors:
   memory_limiter:             # safety valve: refuse data instead of running out of memory
     check_interval: 1s
     limit_mib: 256
-  batch:                      # group spans into batches: far fewer, bigger network sends
+  batch:                      # group data into batches: far fewer, bigger network sends
     timeout: 2s
 
 exporters:
@@ -24,6 +26,10 @@ exporters:
     endpoint: tempo:4317
     tls:
       insecure: true          # plain text is fine inside our private Docker network
+  prometheus:                 # NOT a push: this opens a /metrics page that Prometheus scrapes
+    endpoint: 0.0.0.0:8889
+    enable_open_metrics: true # the text format that can carry EXEMPLARS (links from a metric to a trace)
+    metric_expiration: 30s    # forget a series 30 s after its service stops reporting (see lab notes)
   debug:                      # also print a short summary to the Collector's own log
     verbosity: basic
 
@@ -33,3 +39,15 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, batch]
       exporters: [otlp/tempo, debug]
+    metrics:                  # NEW in Phase 3: the same receiver feeds a second pipeline
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [prometheus, debug]
+  telemetry:                  # the Collector's OWN health numbers (spans received, dropped...)
+    metrics:
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 0.0.0.0
+                port: 8888
