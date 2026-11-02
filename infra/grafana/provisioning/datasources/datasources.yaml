@@ -10,6 +10,7 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     jsonData:
+      timeInterval: 5s          # our scrape interval; lets $__rate_interval pick correct rate() windows
       exemplarTraceIdDestinations:
         - name: trace_id          # the exemplar label that holds the trace id
           datasourceUid: tempo    # clicking the dot opens that trace in the Tempo data source
