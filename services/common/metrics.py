@@ -57,6 +57,8 @@ NODE_DURATION = _meter.create_histogram(
     explicit_bucket_boundaries_advisory=LLM_BUCKETS)
 SUPERVISOR_DECISIONS = _meter.create_counter(
     "supervisor_decisions", unit="{decision}", description="Which step the supervisor chose")
+USER_FEEDBACK = _meter.create_counter(
+    "user_feedback", unit="{vote}", description="Thumbs up / down given by users on answers")
 TOOL_CALLS = _meter.create_counter(
     "agent_tool_calls", unit="{call}", description="Tool calls made by agents")
 
@@ -131,6 +133,11 @@ def track_node(node: str) -> Callable:
         return wrapper
 
     return decorator
+
+
+def record_feedback(score: int) -> None:
+    """Count one piece of user feedback: 1 = thumbs up, 0 = thumbs down."""
+    USER_FEEDBACK.add(1, {"score": "up" if score == 1 else "down"})
 
 
 def record_tool_call(tool: str, outcome: str) -> None:
