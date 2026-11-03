@@ -106,6 +106,12 @@ def install_metrics(app) -> None:
 
 
 # --- Helpers for the agent code ----------------------------------------------------------------
+def record_llm_call(model: str, caller: str, seconds: float, outcome: str) -> None:
+    """Count one finished model call and record how long it took. outcome is "ok" or "error"."""
+    LLM_CALLS.add(1, {"model": model, "caller": caller, "outcome": outcome})
+    LLM_DURATION.record(seconds, {"model": model, "caller": caller})
+
+
 @contextmanager
 def track_llm(model: str, caller: str) -> Iterator[None]:
     """Count and time one LLM call; records outcome=error if the body raises."""
@@ -117,8 +123,7 @@ def track_llm(model: str, caller: str) -> Iterator[None]:
         outcome = "error"
         raise
     finally:
-        LLM_CALLS.add(1, {"model": model, "caller": caller, "outcome": outcome})
-        LLM_DURATION.record(time.perf_counter() - started, {"model": model, "caller": caller})
+        record_llm_call(model, caller, time.perf_counter() - started, outcome)
 
 
 def track_node(node: str) -> Callable:
