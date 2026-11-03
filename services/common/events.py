@@ -101,6 +101,15 @@ def _ensure_worker() -> None:
             _worker.start()
 
 
+def enqueue_event(event: dict) -> None:
+    """Queue an already-built event for delivery to the gateway. Never blocks, never raises."""
+    _ensure_worker()
+    try:
+        _outbox.put_nowait(event)
+    except queue.Full:
+        pass
+
+
 def emit_event(
     component: str,
     kind: str,
@@ -114,12 +123,7 @@ def emit_event(
     request_id = request_id_var.get()
     if request_id is None:
         return
-    _ensure_worker()
-    event = make_event(request_id, component, kind, payload, caller=caller, duration_ms=duration_ms, span_id=span_id)
-    try:
-        _outbox.put_nowait(event)
-    except queue.Full:
-        pass
+    enqueue_event(make_event(request_id, component, kind, payload, caller=caller, duration_ms=duration_ms, span_id=span_id))
 
 
 @contextmanager
