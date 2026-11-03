@@ -18,7 +18,7 @@ setup_telemetry("agents")  # before importing the graph, which creates HTTP clie
 from services.agents import prompts  # noqa: E402
 from services.agents.graph import build_graph, current_model_name  # noqa: E402
 from services.common.events import install_event_middleware, request_id_var  # noqa: E402
-from services.common.metrics import install_metrics, record_feedback  # noqa: E402
+from services.common.metrics import install_metrics, new_usage_tally, record_feedback, request_usage_var  # noqa: E402
 from services.common.telemetry import current_trace_id, set_span_attributes  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,10 @@ class AskResponse(BaseModel):
     prompt_version: str
     visited: list[str] = []     # which workers ran, in order
     tools_used: list[str] = []  # which tools the order agent called
+    llm_calls: int = 0          # model calls made for this question (including the order agent's inner ones)
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0       # ESTIMATED, from services/common/model_prices.json
 
 
 @app.post("/ask", response_model=AskResponse)
@@ -59,10 +63,17 @@ def ask(req: AskRequest) -> AskResponse:
         "metadata": {"request_id": request_id_var.get(), "otel_trace_id": trace_id,
                      "model": current_model_name(), "prompt_version": prompts.PROMPT_VERSION},
     }
+    # Every model call during this question adds its tokens and cost to this dict (see record_llm_usage).
+    usage = new_usage_tally()
+    request_usage_var.set(usage)
     final = graph.invoke({"question": req.question}, config=config)
+    set_span_attributes({"gen_ai.usage.input_tokens": usage["input_tokens"], "gen_ai.usage.output_tokens": usage["output_tokens"],
+                         "shopsense.cost_usd": round(usage["cost_usd"], 6), "shopsense.llm_calls": usage["llm_calls"]})
     return AskResponse(answer=final["answer"], steps=final.get("steps", 0), run_id=str(run_id),
                        prompt_version=prompts.PROMPT_VERSION, visited=final.get("visited", []),
-                       tools_used=final.get("tools_used", []))
+                       tools_used=final.get("tools_used", []), llm_calls=usage["llm_calls"],
+                       input_tokens=usage["input_tokens"], output_tokens=usage["output_tokens"],
+                       cost_usd=round(usage["cost_usd"], 6))
 
 
 class FeedbackRequest(BaseModel):
