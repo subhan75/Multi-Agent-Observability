@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ShopSense X-ray</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <div class="title">
+    <h1>ShopSense X-ray</h1>
+    <span class="muted">watch one request travel through every real component, step by step</span>
+  </div>
+  <form id="ask">
+    <input id="q" type="text" placeholder="Ask a support question…" value="Where is order 42, and can I return it?" autocomplete="off" aria-label="Your question">
+    <button class="btn primary" id="go" type="submit">Send</button>
+  </form>
+  <div class="chips" id="chips"></div>
+</header>
+
+<div class="layout">
+  <aside class="panel" id="history">
+    <h2>Requests</h2>
+    <ul id="history-list"></ul>
+  </aside>
+
+  <main>
+    <section class="panel" id="summary" aria-label="Summary of this request"></section>
+    <div id="caption" class="hidden" aria-live="polite"></div>
+
+    <section class="panel" id="toolbar">
+      <div class="tabs" id="tabs" role="tablist" aria-label="Choose a view">
+        <button role="tab" data-view="architecture" aria-selected="false" title="The components and the lines between them">Architecture</button>
+        <button role="tab" data-view="sequence" aria-selected="true" title="Who called whom, in order, with timings">Sequence</button>
+        <button role="tab" data-view="waterfall" aria-selected="false" title="Every step as a bar on a shared time axis">Waterfall</button>
+      </div>
+      <label class="opt hidden" id="opt-telemetry-wrap"><input type="checkbox" id="opt-telemetry"> Show the telemetry pipeline</label>
+      <div id="playback">
+        <button class="btn small" id="back" title="Previous call" aria-label="Previous call">⏮</button>
+        <button class="btn small" id="play" title="Play / pause the replay" aria-label="Play or pause">▶</button>
+        <button class="btn small" id="step" title="Next call" aria-label="Next call">⏭</button>
+        <input type="range" id="scrub" min="0" max="1" value="0" aria-label="Replay position">
+        <select id="speed" aria-label="Replay speed" title="Replay speed">
+          <option value="1">1× real time</option>
+          <option value="5" selected>5×</option>
+          <option value="20">20×</option>
+        </select>
+        <span id="clock">0.0 s</span>
+      </div>
+    </section>
+
+    <div class="workspace">
+      <section class="panel" id="stage" tabindex="0" aria-label="Visualisation of the request"></section>
+      <aside class="panel" id="drawer" aria-live="polite"></aside>
+    </div>
+
+    <section class="panel hidden" id="answer">
+      <h2 id="answer-title">Final answer</h2>
+      <p id="answer-text"></p>
+      <div class="meta" id="answer-meta"></div>
+      <div id="feedback"><span class="muted">Was this answer helpful?</span>
+        <button class="btn small" type="button" id="fb-up" title="Helpful">👍</button>
+        <button class="btn small" type="button" id="fb-down" title="Not helpful">👎</button>
+        <span class="muted" id="fb-msg"></span></div>
+    </section>
+  </main>
+</div>
+<script type="module" src="/js/main.js"></script>
+</body>
+</html>
