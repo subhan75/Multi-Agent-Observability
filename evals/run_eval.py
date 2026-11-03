@@ -4,6 +4,7 @@
     python -m evals.run_eval --local                  # all 20 questions, results printed here only
     python -m evals.run_eval                          # all 20, recorded as an EXPERIMENT in LangSmith
     python -m evals.run_eval --concurrency 4 --limit 10
+    python -m evals.run_eval --only off-topic,status-43      # re-run just the questions you are investigating
 
 Needs: the orders + inventory services running (scripts/run_all.ps1) and GOOGLE_API_KEY in .env.
 LangSmith mode also needs LANGSMITH_API_KEY, and the dataset (python -m evals.create_dataset).
@@ -71,8 +72,8 @@ def summarize(rows: list[dict]) -> None:
         print("  none")
 
 
-def run_local(limit: int | None, concurrency: int) -> list[dict]:
-    questions = load_questions()[:limit]
+def run_local(limit: int | None, only: set[str] | None, concurrency: int) -> list[dict]:
+    questions = [q for q in load_questions() if not only or q["id"] in only][:limit]
 
     def one(q: dict) -> dict:
         inputs = {"question": q["question"]}
@@ -89,12 +90,15 @@ def run_local(limit: int | None, concurrency: int) -> list[dict]:
         return list(pool.map(one, questions))
 
 
-def run_langsmith(dataset: str, limit: int | None, concurrency: int) -> list[dict]:
+def run_langsmith(dataset: str, limit: int | None, only: set[str] | None, concurrency: int) -> list[dict]:
     from langsmith import Client
 
     client = Client()
     setup = describe_setup()
-    data = client.list_examples(dataset_name=dataset, limit=limit) if limit else dataset
+    data = dataset
+    if limit or only:  # a subset: pick examples ourselves instead of passing the whole dataset name
+        examples = [e for e in client.list_examples(dataset_name=dataset) if not only or (e.metadata or {}).get("id") in only]
+        data = examples[:limit]
     results = client.evaluate(
         run_support_graph,
         data=data,
@@ -117,6 +121,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--local", action="store_true", help="do not use LangSmith: run and print here only")
     parser.add_argument("--limit", type=int, help="only the first N questions")
+    parser.add_argument("--only", help="comma-separated question ids to run, e.g. off-topic,status-43")
     parser.add_argument("--concurrency", type=int, default=2, help="questions answered at the same time (watch Gemini rate limits)")
     parser.add_argument("--dataset", default=DEFAULT_DATASET)
     args = parser.parse_args()
@@ -125,7 +130,9 @@ def main() -> None:
     print(f"Evaluating model={setup['model']} prompt_version={setup['prompt_version']} "
           f"judge={os.getenv('JUDGE_MODEL', DEFAULT_JUDGE_MODEL)} mode={'local' if args.local else 'LangSmith'}")
     started = time.time()
-    rows = run_local(args.limit, args.concurrency) if args.local else run_langsmith(args.dataset, args.limit, args.concurrency)
+    only = {i.strip() for i in args.only.split(",")} if args.only else None
+    rows = (run_local(args.limit, only, args.concurrency) if args.local
+            else run_langsmith(args.dataset, args.limit, only, args.concurrency))
     summarize(rows)
     print(f"\nfinished in {time.time() - started:.0f}s")
 
