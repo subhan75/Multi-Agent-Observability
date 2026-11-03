@@ -4,403 +4,64 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ShopSense X-ray</title>
-<style>
-  :root {
-    --bg: #f6f7f9; --panel: #ffffff; --ink: #1c2330; --muted: #667085; --line: #d9dde5;
-    --accent: #2f6fed; --accent-soft: #e6eefd; --ok: #1a8f5b; --ok-soft: #e3f5ec;
-    --err: #c8372d; --err-soft: #fdeceb; --warn: #b7791f;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #12151b; --panel: #1b1f27; --ink: #e6e9ef; --muted: #98a1b3; --line: #313845;
-      --accent: #6a9bff; --accent-soft: #1e2b47; --ok: #4cc38a; --ok-soft: #173326;
-      --err: #ff7b72; --err-soft: #3a1f1d; --warn: #e3b341;
-    }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink);
-         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  header { padding: 14px 20px; background: var(--panel); border-bottom: 1px solid var(--line); }
-  h1 { font-size: 16px; margin: 0 0 10px; }
-  h1 span { color: var(--muted); font-weight: 400; }
-  form { display: flex; gap: 8px; flex-wrap: wrap; }
-  input[type=text] { flex: 1 1 320px; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--line);
-                     background: var(--bg); color: var(--ink); font: inherit; }
-  button, select { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line);
-                   background: var(--panel); color: var(--ink); font: inherit; cursor: pointer; }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button:disabled { opacity: .55; cursor: default; }
-  .chips { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
-  .chip { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--accent-soft);
-          color: var(--accent); border: 0; cursor: pointer; }
-  main { display: grid; grid-template-columns: 230px 1fr; gap: 16px; padding: 16px 20px; align-items: start; }
-  @media (max-width: 860px) { main { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-  .panel h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
-  #history { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto; }
-  #history li { padding: 7px 8px; border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
-  #history li:hover { background: var(--bg); }
-  #history li.current { background: var(--accent-soft); border-color: var(--accent); }
-  #history small { color: var(--muted); display: block; }
-  .stack { display: grid; gap: 16px; min-width: 0; }
-  .bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; color: var(--muted); }
-  #status { font-weight: 600; }
-  svg { width: 100%; height: auto; display: block; }
-  .group { fill: none; stroke: var(--line); stroke-dasharray: 5 4; }
-  .group-label { fill: var(--muted); font-size: 11px; }
-  .edge { stroke: var(--line); stroke-width: 1.6; fill: none; }
-  .edge.hot { stroke: var(--accent); stroke-width: 2.4; }
-  .edge.now { stroke-dasharray: 6 5; animation: flow .5s linear infinite; }
-  @keyframes flow { to { stroke-dashoffset: -11; } }
-  .node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; rx: 9; transition: all .2s; }
-  .node text { fill: var(--muted); font-size: 12px; text-anchor: middle; pointer-events: none; }
-  .node text.t { fill: var(--ink); font-weight: 600; font-size: 13px; }
-  .node { cursor: pointer; }
-  .node.done rect { fill: var(--ok-soft); stroke: var(--ok); }
-  .node.active rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5; animation: pulse 1s ease-in-out infinite; }
-  .node.error rect { fill: var(--err-soft); stroke: var(--err); }
-  .node.filter rect { stroke-width: 3; stroke: var(--warn); }
-  @keyframes pulse { 50% { stroke-opacity: .35; } }
-  #answer { display: none; border-left: 4px solid var(--ok); }
-  #answer.error { border-color: var(--err); }
-  #answer p { margin: 0; white-space: pre-wrap; }
-  .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
-  #answer-meta { margin-top: 10px; }
-  #feedback { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  #feedback button { padding: 3px 12px; }
-  #timeline { display: grid; gap: 6px; }
-  details.card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; background: var(--bg); }
-  details.card.running { border-left-color: var(--accent); }
-  details.card.finished { border-left-color: var(--ok); }
-  details.card.failed { border-left-color: var(--err); }
-  details.card.hidden { display: none; }
-  details.card summary { padding: 7px 10px; cursor: pointer; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
-  .t0 { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 52px; }
-  .who { font-weight: 600; }
-  .badge { font-size: 11px; padding: 1px 8px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); }
-  .badge.next { background: var(--ok-soft); color: var(--ok); font-size: 12px; font-weight: 600; }
-  .dur { color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
-  .sum { color: var(--muted); flex-basis: 100%; padding-left: 62px; overflow-wrap: anywhere; }
-  .detail { padding: 0 10px 10px; display: grid; gap: 8px; }
-  .detail h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-  pre { margin: 0; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
-        overflow: auto; max-height: 260px; font-size: 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .empty { color: var(--muted); padding: 8px; }
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
 <body>
 <header>
-  <h1>ShopSense X-ray <span>— watch one request travel through every component</span></h1>
+  <div class="title">
+    <h1>ShopSense X-ray</h1>
+    <span class="muted">watch one request travel through every real component, step by step</span>
+  </div>
   <form id="ask">
-    <input id="q" type="text" placeholder="Ask a support question…" value="Where is order 42, and can I return it?" autocomplete="off">
-    <button class="primary" id="go" type="submit">Send</button>
-    <select id="speed" title="Replay speed">
-      <option value="0">Replay: instant</option>
-      <option value="1" selected>Replay: real time</option>
-      <option value="3">Replay: slow (3×)</option>
-    </select>
+    <input id="q" type="text" placeholder="Ask a support question…" value="Where is order 42, and can I return it?" autocomplete="off" aria-label="Your question">
+    <button class="btn primary" id="go" type="submit">Send</button>
+    <select id="history-select" class="btn" aria-label="Replay a past request" title="Replay a past request"><option value="">Past requests…</option></select>
   </form>
   <div class="chips" id="chips"></div>
 </header>
 
-<main>
-  <aside class="panel">
-    <h2>Requests</h2>
-    <ul id="history"></ul>
-  </aside>
+<div class="layout">
+  <main>
+    <section class="panel" id="summary" aria-label="Summary of this request"></section>
+    <div id="caption" class="hidden" aria-live="polite"></div>
 
-  <div class="stack">
-    <section class="panel">
-      <div class="bar"><span id="status">Idle</span><span id="clock"></span><span id="trace"></span>
-        <span>· Click a component to filter the timeline.</span></div>
-      <svg id="graph" viewBox="0 0 900 440" role="img" aria-label="Architecture graph"></svg>
+    <section class="panel" id="toolbar">
+      <div class="tabs" id="tabs" role="tablist" aria-label="Choose a view">
+        <button role="tab" data-view="architecture" aria-selected="false" title="The components and the lines between them">Architecture</button>
+        <button role="tab" data-view="sequence" aria-selected="true" title="Who called whom, in order, with timings">Sequence</button>
+        <button role="tab" data-view="waterfall" aria-selected="false" title="Every step as a bar on a shared time axis">Waterfall</button>
+      </div>
+      <label class="opt hidden" id="opt-telemetry-wrap"><input type="checkbox" id="opt-telemetry"> Show the telemetry pipeline</label>
+      <div id="playback">
+        <button class="btn small" id="back" title="Previous call" aria-label="Previous call">⏮</button>
+        <button class="btn small" id="play" title="Play / pause the replay" aria-label="Play or pause">▶</button>
+        <button class="btn small" id="step" title="Next call" aria-label="Next call">⏭</button>
+        <input type="range" id="scrub" min="0" max="1" value="0" aria-label="Replay position">
+        <select id="speed" aria-label="Replay speed" title="Replay speed">
+          <option value="1">1× real time</option>
+          <option value="5" selected>5×</option>
+          <option value="20">20×</option>
+        </select>
+        <span id="clock">0.0 s</span>
+      </div>
     </section>
 
-    <section class="panel" id="answer"><h2 id="answer-title">Final answer</h2><p id="answer-text"></p>
+    <div class="workspace">
+      <section class="panel" id="stage" tabindex="0" aria-label="Visualisation of the request"></section>
+      <aside class="panel" id="drawer" aria-live="polite"></aside>
+    </div>
+
+    <section class="panel hidden" id="answer">
+      <h2 id="answer-title">Final answer</h2>
+      <p id="answer-text"></p>
       <div class="meta" id="answer-meta"></div>
-      <div id="feedback"><span class="meta">Was this answer helpful?</span>
-        <button type="button" id="fb-up" title="Helpful">👍</button>
-        <button type="button" id="fb-down" title="Not helpful">👎</button>
-        <span class="meta" id="fb-msg"></span></div></section>
-
-    <section class="panel">
-      <h2>Step timeline</h2>
-      <div id="timeline"><div class="empty">Send a question to see each step appear here.</div></div>
+      <div id="feedback"><span class="muted">Was this answer helpful?</span>
+        <button class="btn small" type="button" id="fb-up" title="Helpful">👍</button>
+        <button class="btn small" type="button" id="fb-down" title="Not helpful">👎</button>
+        <span class="muted" id="fb-msg"></span></div>
     </section>
-  </div>
-</main>
-
-<script>
-// ---------- Static description of the architecture (ids match the `component` field of events) ----------
-const NODES = {
-  user:         { x: 15,  y: 170, label: "User",          sub: "browser" },
-  gateway:      { x: 140, y: 170, label: "Gateway",       sub: ":8000" },
-  supervisor:   { x: 285, y: 170, label: "Supervisor",    sub: "routes work" },
-  order_agent:  { x: 450, y: 50,  label: "Order agent",   sub: "uses tool" },
-  policy_agent: { x: 450, y: 170, label: "Policy agent",  sub: "RAG" },
-  writer:       { x: 450, y: 290, label: "Writer",        sub: "final reply" },
-  gemini:       { x: 340, y: 380, label: "Gemini",        sub: "LLM", wide: true },
-  kb:           { x: 625, y: 190, label: "Policy docs",   sub: "knowledge base" },
-  orders:       { x: 625, y: 30,  label: "Orders svc",    sub: ":8001" },
-  inventory:    { x: 625, y: 110, label: "Inventory svc", sub: ":8002" },
-  sqlite:       { x: 775, y: 70,  label: "SQLite",        sub: "database" },
-};
-const W = 110, H = 46;
-const EDGES = [
-  "user>gateway", "gateway>supervisor", "supervisor>order_agent", "supervisor>policy_agent", "supervisor>writer",
-  "order_agent>orders", "orders>inventory", "orders>sqlite", "inventory>sqlite", "policy_agent>kb",
-  "supervisor>gemini", "order_agent>gemini", "policy_agent>gemini", "writer>gemini",
-];
-const KIND_LABEL = { step_start: "step", step_end: "step", step_error: "error", llm_call: "LLM call",
-                     tool_call: "tool call", retrieval: "retrieval", db_read: "DB read",
-                     request_done: "done", request_error: "failed", feedback: "feedback" };
-
-const GRAFANA = "http://localhost:3000";   // Grafana runs in Docker on this computer (Phase 2)
-const $ = (id) => document.getElementById(id);
-const svgNS = "http://www.w3.org/2000/svg";
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const center = (id) => { const n = NODES[id], w = n.wide ? 220 : W; return [n.x + w / 2, n.y + H / 2]; };
-
-// ---------- Graph drawing ----------
-function el(name, attrs = {}, parent) {
-  const e = document.createElementNS(svgNS, name);
-  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
-  if (parent) parent.appendChild(e);
-  return e;
-}
-function drawGraph() {
-  const svg = $("graph"); svg.replaceChildren();
-  el("rect", { class: "group", x: 270, y: 14, width: 320, height: 340, rx: 14 }, svg);
-  el("text", { class: "group-label", x: 282, y: 32 }, svg).textContent = "Agents service  :8003  (LangGraph)";
-  for (const key of EDGES) {
-    const [a, b] = key.split(">"), [x1, y1] = center(a), [x2, y2] = center(b);
-    el("line", { class: "edge", id: "edge-" + key.replace(">", "-"), x1, y1, x2, y2 }, svg);
-  }
-  for (const [id, n] of Object.entries(NODES)) {
-    const g = el("g", { class: "node", id: "node-" + id }, svg);
-    const w = n.wide ? 220 : W;
-    el("rect", { x: n.x, y: n.y, width: w, height: H }, g);
-    el("text", { class: "t", x: n.x + w / 2, y: n.y + 20 }, g).textContent = n.label;
-    el("text", { x: n.x + w / 2, y: n.y + 36 }, g).textContent = n.sub;
-    g.addEventListener("click", () => toggleFilter(id));
-  }
-}
-function lightEdge(from, to) {
-  if (!from || !to) return;
-  const e = $("edge-" + from + "-" + to) || $("edge-" + to + "-" + from);
-  if (!e) return;
-  e.classList.add("hot", "now");
-  setTimeout(() => e.classList.remove("now"), 1400);
-}
-function nodeState(id, state, on = true) { $("node-" + id)?.classList.toggle(state, on); }
-
-// ---------- View state for one request ----------
-let view = null;
-function resetView(question) {
-  view = { t0: null, running: {}, cards: {}, filter: null, question };
-  drawGraph();
-  $("timeline").replaceChildren();
-  $("answer").style.display = "none"; $("answer").classList.remove("error");
-  $("clock").textContent = ""; $("trace").replaceChildren();
-}
-function toggleFilter(id) {
-  view.filter = view.filter === id ? null : id;
-  document.querySelectorAll(".node").forEach((n) => n.classList.toggle("filter", n.id === "node-" + view.filter));
-  document.querySelectorAll("details.card").forEach((c) => c.classList.toggle("hidden", !!view.filter && c.dataset.component !== view.filter));
-}
-
-// ---------- Timeline cards ----------
-const pretty = (o) => JSON.stringify(o, null, 2);
-const clip = (s, n = 140) => (s.length > n ? s.slice(0, n) + "…" : s);
-
-function section(title, obj) {
-  const wrap = document.createElement("div");
-  const h = document.createElement("h3"); h.textContent = title;
-  const pre = document.createElement("pre"); pre.textContent = pretty(obj);
-  wrap.append(h, pre); return wrap;
-}
-function makeCard(ev) {
-  const d = document.createElement("details"); d.className = "card running"; d.dataset.component = ev.component;
-  const s = document.createElement("summary");
-  s.innerHTML = '<span class="t0"></span><span class="who"></span><span class="badge"></span><span class="dur"></span><span class="sum"></span>';
-  const body = document.createElement("div"); body.className = "detail";
-  d.append(s, body);
-  $("timeline").appendChild(d);
-  d.scrollIntoView({ block: "nearest" });
-  return d;
-}
-function fillCard(card, ev, inputPayload) {
-  const q = (c) => card.querySelector(c);
-  q(".t0").textContent = "+" + ((ev.ts - view.t0)).toFixed(2) + "s";
-  q(".who").textContent = NODES[ev.component]?.label ?? ev.component;
-  q(".badge").textContent = KIND_LABEL[ev.kind] ?? ev.kind;
-  q(".dur").textContent = ev.duration_ms != null ? Math.round(ev.duration_ms) + " ms" : "";
-  const p = ev.payload || {};
-  q(".sum").textContent = clip(p.summary || p.answer || p.error || "");
-  if (ev.component === "supervisor" && p.next_step) {
-    const b = document.createElement("span"); b.className = "badge next"; b.textContent = "→ " + p.next_step;
-    q(".badge").after(b);
-  }
-  const body = card.querySelector(".detail"); body.replaceChildren();
-  if (inputPayload) body.appendChild(section("Input", inputPayload));
-  body.appendChild(section(inputPayload ? "Output" : "Data", p));
-  if (ev.caller) { const c = document.createElement("h3"); c.textContent = "Called by: " + ev.caller; body.appendChild(c); }
-}
-
-// ---------- Link to the OpenTelemetry trace of this request ----------
-function showTrace(traceId) {
-  const pane = { a: { datasource: "tempo", range: { from: "now-6h", to: "now" },
-    queries: [{ refId: "A", datasource: { type: "tempo", uid: "tempo" }, queryType: "traceql", query: traceId }] } };
-  const url = GRAFANA + "/explore?schemaVersion=1&orgId=1&panes=" + encodeURIComponent(JSON.stringify(pane));
-  const a = document.createElement("a");
-  a.href = url; a.target = "_blank"; a.rel = "noopener";
-  a.textContent = "trace " + traceId.slice(0, 8) + "… ↗ open in Grafana";
-
-  // Same request, seen as LOGS: every log line any service wrote while handling this trace.
-  const logPane = { a: { datasource: "loki", range: { from: "now-6h", to: "now" },
-    queries: [{ refId: "A", datasource: { type: "loki", uid: "loki" }, queryType: "range",
-                expr: '{service_name=~".+"} | trace_id="' + traceId + '"' }] } };
-  const logs = document.createElement("a");
-  logs.href = GRAFANA + "/explore?schemaVersion=1&orgId=1&panes=" + encodeURIComponent(JSON.stringify(logPane));
-  logs.target = "_blank"; logs.rel = "noopener"; logs.textContent = "↗ logs";
-  $("trace").replaceChildren(" · ", a, " · ", logs);
-}
-
-// ---------- What ran, and user feedback ----------
-function showAnswerDetails(p) {
-  const parts = [];
-  if (p.visited && p.visited.length) parts.push("workers: " + p.visited.join(" → "));
-  if (p.tools_used) parts.push("tools: " + (p.tools_used.length ? p.tools_used.join(", ") : "none"));
-  if (p.llm_calls) parts.push(p.llm_calls + " model calls, " + (p.input_tokens + p.output_tokens).toLocaleString() + " tokens ("
-      + p.input_tokens.toLocaleString() + " in / " + p.output_tokens.toLocaleString() + " out), est. $" + p.cost_usd.toFixed(4));
-  if (p.prompt_version) parts.push("prompt version " + p.prompt_version);
-  if (p.langsmith_run_id) parts.push("LangSmith run " + p.langsmith_run_id);
-  $("answer-meta").textContent = parts.join("  ·  ");
-  $("fb-msg").textContent = ""; $("fb-up").disabled = false; $("fb-down").disabled = false;
-}
-async function sendFeedback(score) {
-  $("fb-up").disabled = true; $("fb-down").disabled = true;
-  try {
-    const res = await fetch("/feedback", { method: "POST", headers: { "Content-Type": "application/json" },
-                                           body: JSON.stringify({ request_id: currentId, score }) });
-    const out = await res.json();
-    $("fb-msg").textContent = res.ok ? "Thanks! " + out.detail : "Could not send feedback (" + res.status + ")";
-  } catch { $("fb-msg").textContent = "Network error"; }
-}
-$("fb-up").addEventListener("click", () => sendFeedback(1));
-$("fb-down").addEventListener("click", () => sendFeedback(0));
-
-// ---------- Apply one event to the view ----------
-function apply(ev) {
-  if (view.t0 === null) view.t0 = ev.ts;
-  $("clock").textContent = "elapsed " + (ev.ts - view.t0).toFixed(2) + "s";
-  const id = ev.component;
-  if (ev.payload && ev.payload.trace_id) showTrace(ev.payload.trace_id);
-  lightEdge(ev.caller, id);
-
-  if (ev.kind === "step_start") {
-    view.running[id] = (view.running[id] || 0) + 1;
-    nodeState(id, "active");
-    const card = makeCard(ev); view.cards[ev.span_id] = { card, input: ev.payload };
-    fillCard(card, ev, null); card.querySelector(".dur").textContent = "running…";
-    if (view.filter && view.filter !== id) card.classList.add("hidden");
-  } else if (ev.kind === "step_end" || ev.kind === "step_error") {
-    const failed = ev.kind === "step_error";
-    view.running[id] = Math.max(0, (view.running[id] || 1) - 1);
-    if (!view.running[id]) nodeState(id, "active", false);
-    nodeState(id, failed ? "error" : "done");
-    const entry = view.cards[ev.span_id];
-    if (entry) {
-      entry.card.classList.remove("running"); entry.card.classList.add(failed ? "failed" : "finished");
-      fillCard(entry.card, ev, entry.input);
-    }
-  } else if (ev.kind === "request_done") {
-    nodeState("user", "done");
-    $("answer-title").textContent = "Final answer"; $("answer-text").textContent = ev.payload.answer;
-    showAnswerDetails(ev.payload);
-    $("answer").style.display = "block";
-  } else if (ev.kind === "request_error") {
-    $("answer-title").textContent = "Request failed"; $("answer-text").textContent = ev.payload.error;
-    $("answer").classList.add("error"); $("answer").style.display = "block";
-  } else {   // llm_call, tool_call, retrieval, db_read: instant events
-    nodeState(id, "done");
-    const card = makeCard(ev); card.classList.replace("running", "finished");
-    fillCard(card, ev, null);
-    if (view.filter && view.filter !== id) card.classList.add("hidden");
-  }
-}
-
-// ---------- Live stream and replay ----------
-let currentId = null, runToken = 0;
-
-function setStatus(text) { $("status").textContent = text; }
-
-function startLive(requestId, question) {
-  const token = ++runToken; currentId = requestId; resetView(question);
-  setStatus("Live…"); markCurrent();
-  const es = new EventSource("/events/" + requestId + "/stream");
-  es.onmessage = (m) => {
-    if (token !== runToken) { es.close(); return; }
-    const ev = JSON.parse(m.data); apply(ev);
-    if (ev.kind === "request_done" || ev.kind === "request_error") {
-      setStatus(ev.kind === "request_done" ? "Finished" : "Failed"); loadHistory();
-      // Stragglers from other services can still arrive; the server stops the stream shortly after.
-      setTimeout(() => es.close(), 3000);
-    }
-  };
-}
-
-async function replay(requestId, question) {
-  const token = ++runToken; currentId = requestId; resetView(question); markCurrent();
-  const events = await (await fetch("/requests/" + requestId + "/events")).json();
-  events.sort((a, b) => a.ts - b.ts);                     // events from different services can arrive out of order
-  const scale = Number($("speed").value); setStatus("Replaying…");
-  let prev = events[0]?.ts;
-  for (const ev of events) {
-    if (token !== runToken) return;                       // a newer run took over
-    if (scale > 0) await sleep(Math.min((ev.ts - prev) * 1000 * scale, 2500));
-    prev = ev.ts; apply(ev);
-  }
-  setStatus("Replay finished");
-}
-
-async function loadHistory() {
-  const list = await (await fetch("/requests")).json();
-  const ul = $("history"); ul.replaceChildren();
-  for (const r of list) {
-    const li = document.createElement("li"); li.dataset.id = r.request_id;
-    li.innerHTML = "<span></span><small></small>";
-    li.firstChild.textContent = clip(r.question || "(no question)", 48);
-    li.lastChild.textContent = r.request_id + " · " + r.events + " events" + (r.finished ? "" : " · running");
-    li.onclick = () => replay(r.request_id, r.question);
-    ul.appendChild(li);
-  }
-  markCurrent();
-}
-function markCurrent() {
-  document.querySelectorAll("#history li").forEach((li) => li.classList.toggle("current", li.dataset.id === currentId));
-}
-
-// ---------- Wiring ----------
-$("ask").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const question = $("q").value.trim(); if (question.length < 3) return;
-  const requestId = "r" + Math.random().toString(36).slice(2, 8);
-  startLive(requestId, question);                         // open the stream FIRST…
-  $("go").disabled = true;
-  try {
-    const res = await fetch("/support", { method: "POST", headers: { "Content-Type": "application/json" },
-                                          body: JSON.stringify({ question, request_id: requestId }) });
-    if (!res.ok) setStatus("Failed (" + res.status + ")");
-  } catch { setStatus("Network error"); }
-  finally { $("go").disabled = false; loadHistory(); }  // …then send the request
-});
-for (const text of ["Where is order 42, and can I return it?", "Is order 43 in stock?", "How long does express shipping take?", "Where is order 999?"]) {
-  const b = document.createElement("button"); b.type = "button"; b.className = "chip"; b.textContent = text;
-  b.onclick = () => { $("q").value = text; $("q").focus(); };
-  $("chips").appendChild(b);
-}
-resetView(""); loadHistory();
-</script>
+  </main>
+</div>
+<script type="module" src="/js/main.js"></script>
 </body>
 </html>
