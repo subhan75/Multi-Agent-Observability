@@ -90,16 +90,18 @@ def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
         span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
         span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
         span.set_attribute("shopsense.cost_usd", cost)
-    duration_ms = (time.perf_counter() - started) * 1000
-    logger.info("llm call finished", extra={"agent": parent, "model": model, "duration_ms": round(duration_ms),
-                                           "input_tokens": input_tokens, "output_tokens": output_tokens})
-    emit_event(
-        "gemini", "llm_call",
-        {"from": parent, "model": model, "prompt": prompt, "response": response,
-         "input_tokens": input_tokens, "output_tokens": output_tokens, "cost_usd": round(cost, 6),
-         "summary": f"{model} <- {parent}"},
-        caller=parent, duration_ms=duration_ms,
-    )
+        # Logged and reported INSIDE the span, so the log line and the X-ray event are stamped with this
+        # exact span's id (the prompt and reply then show up when you click this step in the X-ray page).
+        duration_ms = (time.perf_counter() - started) * 1000
+        logger.info("llm call finished", extra={"agent": parent, "model": model, "duration_ms": round(duration_ms),
+                                               "input_tokens": input_tokens, "output_tokens": output_tokens})
+        emit_event(
+            "gemini", "llm_call",
+            {"from": parent, "model": model, "prompt": prompt, "response": response,
+             "input_tokens": input_tokens, "output_tokens": output_tokens, "cost_usd": round(cost, 6),
+             "summary": f"{model} <- {parent}"},
+            caller=parent, duration_ms=duration_ms,
+        )
     return result
 
 
