@@ -6,6 +6,8 @@ becomes a visible span/run in later phases.
 import re
 from pathlib import Path
 
+from langsmith import traceable
+
 KB_FILE = Path(__file__).parent / "kb" / "policies.md"
 
 
@@ -18,6 +20,9 @@ def _words(text: str) -> set[str]:
     return set(re.findall(r"[a-z]+", text.lower()))
 
 
+# run_type="retriever" makes LangSmith draw this step as a document lookup (with its own icon and layout).
+# When LangSmith tracing is switched off, @traceable does nothing at all.
+@traceable(run_type="retriever", name="policy_retrieve")
 def retrieve(question: str, top_k: int = 2) -> list[str]:
     """Return the top_k policy sections sharing the most words with the question."""
     q = _words(question)
