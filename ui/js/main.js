@@ -48,7 +48,7 @@ function render() {
 }
 
 function renderSummary() {
-  const st = model.stats();
+  const st = model.stats(ui.live && !model.done ? ui.T : null);
   const status = model.error ? ["failed", "Failed"] : model.done ? ["done", "Finished"] : ui.live ? ["running", "Running…"] : ["idle", "Idle"];
   const stat = (label, value) => h("div", { class: "stat" }, h("b", {}, value), h("span", {}, label));
   const hasData = st.spans > 0;
@@ -92,7 +92,8 @@ function renderPlayback() {
   scrub.disabled = ui.live && !model.done;
   scrub.min = 0; scrub.max = Math.max((tEnd - t0) * 1000, 1);
   scrub.value = Math.min((ui.T - t0) * 1000, scrub.max);
-  $("clock").textContent = `${fmtMs(Math.max(ui.T - t0, 0) * 1000)} / ${fmtMs((tEnd - t0) * 1000)}`;
+  $("clock").textContent = ui.live && !model.done ? `${fmtMs(Math.max(ui.T - t0, 0) * 1000)} elapsed`
+    : `${fmtMs(Math.max(ui.T - t0, 0) * 1000)} / ${fmtMs((tEnd - t0) * 1000)}`;
   $("play").textContent = playing ? "⏸" : "▶";
   $("play").disabled = ui.live && !model.done;
   $("step").disabled = $("back").disabled = ui.live && !model.done;

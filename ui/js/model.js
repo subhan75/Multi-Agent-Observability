@@ -129,15 +129,15 @@ export class TraceModel {
     return this._cache;
   }
 
-  /** Totals shown in the summary strip. */
-  stats() {
+  /** Totals shown in the summary strip. While a request is still running, pass `now` so the time keeps counting. */
+  stats(now = null) {
     const { spans, t0, tEnd } = this.derived();
     const llmCalls = spans.filter((s) => s.kind === "CLIENT" && urlOf(s).includes("googleapis.com")).length;
     const r = this.result;
     return {
       spans: spans.length,
       services: new Set(spans.map((s) => s.service)).size,
-      duration: t0 === null ? null : (tEnd - t0) * 1000,
+      duration: t0 === null ? null : (Math.max(tEnd, now ?? 0) - t0) * 1000,
       llmCalls: r?.llm_calls ?? llmCalls,
       inputTokens: r?.input_tokens ?? 0,
       outputTokens: r?.output_tokens ?? 0,
