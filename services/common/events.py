@@ -15,6 +15,7 @@ from contextvars import ContextVar
 from typing import Any
 
 import httpx
+from opentelemetry import trace
 from opentelemetry.instrumentation.utils import suppress_instrumentation
 
 from services.common.config import service_url
@@ -40,6 +41,14 @@ def _jsonable(value: Any, limit: int = 4000) -> Any:
     return json.loads(text)
 
 
+def _current_otel_ids() -> tuple[str | None, str | None]:
+    """(trace_id, span_id) of the OpenTelemetry span we are inside right now, as hex text; (None, None) if none."""
+    context = trace.get_current_span().get_span_context()
+    if not context.is_valid:
+        return None, None
+    return format(context.trace_id, "032x"), format(context.span_id, "016x")
+
+
 def make_event(
     request_id: str,
     component: str,
@@ -50,8 +59,13 @@ def make_event(
     duration_ms: float | None = None,
     span_id: str | None = None,
 ) -> dict:
+    # Which real OpenTelemetry span was active when this event was made. The X-ray page uses this to attach
+    # details (prompts, tool arguments, state) to exactly the right step of the trace.
+    otel_trace_id, otel_span_id = _current_otel_ids()
     return {
         "request_id": request_id,
+        "otel_trace_id": otel_trace_id,
+        "otel_span_id": otel_span_id,
         "ts": time.time(),
         "component": component,
         "kind": kind,
