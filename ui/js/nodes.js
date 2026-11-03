@@ -98,7 +98,7 @@ export const EDGES = [
   { id: "orders>collector", from: "orders", to: "collector", plane: "telemetry", points: [[790, 262], [820, 262], [820, 700], [465, 700]] },
   { id: "inventory>collector", from: "inventory", to: "collector", plane: "telemetry", points: [[720, 454], [720, 700]] },
   { id: "collector>tempo", from: "collector", to: "tempo", plane: "telemetry", label: "traces", points: [[570, 818], [605, 818], [605, 749], [640, 749]] },
-  { id: "collector>prometheus", from: "collector", to: "prometheus", plane: "telemetry", label: "metrics (scraped)", points: [[570, 818], [640, 819]] },
+  { id: "collector>prometheus", from: "collector", to: "prometheus", plane: "telemetry", label: "metrics", points: [[570, 818], [640, 819]] },
   { id: "collector>loki", from: "collector", to: "loki", plane: "telemetry", label: "logs", points: [[570, 818], [605, 818], [605, 889], [640, 889]] },
   { id: "tempo>grafana", from: "tempo", to: "grafana", plane: "telemetry", points: [[770, 749], [815, 749], [815, 819], [860, 819]] },
   { id: "prometheus>grafana", from: "prometheus", to: "grafana", plane: "telemetry", points: [[770, 819], [860, 819]] },

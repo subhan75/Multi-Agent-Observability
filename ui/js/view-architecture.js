@@ -84,7 +84,7 @@ export function renderArchitecture(container, model, ui) {
     if (n.plane === "telemetry" && !ui.showTelemetry) continue;
     const box = LAYOUT[id], info = nodeInfo[id];
     const seen = Boolean(info) || (id === "browser" && calls.length > 0) || (n.plane === "telemetry" && telemetry[`${id}>grafana`] !== undefined && finishedAny)
-      || (id === "collector" && finishedAny) || (id === "langsmith" && telemetry["agents>langsmith"]);
+      || ((id === "collector" || id === "grafana") && finishedAny) || (id === "langsmith" && telemetry["agents>langsmith"]);
     const state = info?.errors ? "error" : info?.running ? "running" : info ? "done" : "";
     const g = s("g", { class: `node g-${n.group} ${seen ? "seen" : ""} ${state} ${id === selectedNode ? "selected" : ""}`, "data-node": id, tabindex: 0, role: "button",
       "aria-label": `${n.label}${info ? `, called ${info.calls} times` : ""}`,
