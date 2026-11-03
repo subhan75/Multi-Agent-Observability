@@ -51,12 +51,13 @@ class Decision(BaseModel):
     next_step: Literal["order_agent", "policy_agent", "writer"]
 
 
-def _model_name() -> str:
+def current_model_name() -> str:
     return os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
 
 
+
 def _llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(model=_model_name(), temperature=0)
+    return ChatGoogleGenerativeAI(model=current_model_name(), temperature=0)
 
 
 def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
@@ -65,21 +66,21 @@ def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
     started = time.perf_counter()
     # OpenTelemetry: one span per Gemini call, labelled with the model and which agent asked.
     with get_tracer().start_as_current_span("gemini.generate") as span:
-        span.set_attribute("gen_ai.request.model", _model_name())
+        span.set_attribute("gen_ai.request.model", current_model_name())
         span.set_attribute("shopsense.agent", parent)
-        with track_llm(_model_name(), parent):  # Prometheus: count + time this call, even if it fails
+        with track_llm(current_model_name(), parent):  # Prometheus: count + time this call, even if it fails
             if schema is None:
                 result = llm.invoke(prompt)
                 response = result.text  # `.text` flattens Gemini's content blocks into a plain string
             else:
                 result = llm.with_structured_output(schema).invoke(prompt)
                 response = result.model_dump()
-    logger.info("llm call finished", extra={"agent": parent, "model": _model_name(),
+    logger.info("llm call finished", extra={"agent": parent, "model": current_model_name(),
                                            "duration_ms": round((time.perf_counter() - started) * 1000)})
     emit_event(
         "gemini", "llm_call",
-        {"from": parent, "model": _model_name(), "prompt": prompt, "response": response,
-         "summary": f"{_model_name()} ← {parent}"},
+        {"from": parent, "model": current_model_name(), "prompt": prompt, "response": response,
+         "summary": f"{current_model_name()} ← {parent}"},
         caller=parent, duration_ms=(time.perf_counter() - started) * 1000,
     )
     return result
