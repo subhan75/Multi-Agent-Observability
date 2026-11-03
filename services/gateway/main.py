@@ -81,6 +81,32 @@ async def support(body: Question) -> dict:
     return {"request_id": request_id, "trace_id": trace_id, **result}
 
 
+class Feedback(BaseModel):
+    request_id: str = Field(pattern=r"^[a-z0-9-]{4,40}$")
+    score: int = Field(ge=0, le=1)  # 1 = thumbs up, 0 = thumbs down
+    comment: str | None = Field(default=None, max_length=500)
+
+
+@app.post("/feedback")
+async def feedback(body: Feedback) -> dict:
+    """A user's thumbs up/down on an answer. Forwarded to the agents service, which attaches it to the LangSmith run."""
+    record = store.get(body.request_id)
+    if record is None or record.run_id is None:
+        raise HTTPException(status_code=404, detail="No answered request with that id")
+    try:
+        resp = await app.state.http.post(f"{AGENTS_URL}/feedback", timeout=20,
+                                         json={"run_id": record.run_id, "score": body.score, "comment": body.comment},
+                                         headers={REQUEST_ID_HEADER: body.request_id})
+        resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        logger.exception("could not forward feedback", extra={"request_id": body.request_id})
+        raise HTTPException(status_code=502, detail="Agents service failed") from exc
+    result = resp.json()
+    store.add(make_event(body.request_id, "gateway", "feedback", {"score": body.score, "summary": "thumbs up" if body.score else "thumbs down", **result}))
+    logger.info("feedback received", extra={"request_id": body.request_id, "score": body.score})
+    return result
+
+
 @app.post("/internal/events")
 async def receive_event(event: dict) -> dict[str, str]:
     """Other services POST their step events here."""
