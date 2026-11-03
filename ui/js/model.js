@@ -110,6 +110,15 @@ export class TraceModel {
       s.step = null;
       s.details = this.details.get(s.id) || [];
     }
+    // The actual HTTPS call to Gemini is the arrow people click, but the prompt and reply were recorded by the
+    // code AROUND it (the "model call" wrapper, or the order agent's callback). So a Gemini call inherits the
+    // model-call details from its parent whose timestamp falls inside the call.
+    for (const s of spans) {
+      if (s.route?.to !== "gemini" || s.details.length) continue;
+      const parent = byId.get(s.parentId);
+      const end = (s.end ?? Infinity) + 0.5;
+      s.details = (parent ? this.details.get(parent.id) || [] : []).filter((e) => e.kind === "llm_call" && e.ts >= s.start - 0.05 && e.ts <= end);
+    }
     // Step numbers go to the spans that are calls between components, in the order they began.
     let step = 0;
     for (const s of spans) if (s.route) s.step = ++step;
