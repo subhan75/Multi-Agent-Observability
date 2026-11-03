@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Path as PathParam
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -21,6 +21,11 @@ from services.gateway.store import EventStore
 logger = logging.getLogger(__name__)
 
 AGENTS_URL = service_url("AGENTS_URL", 8003)
+LOKI_URL = service_url("LOKI_URL", 3100)
+# Log metadata that is plumbing, not information: hidden from the X-ray page.
+_HIDDEN_LOG_FIELDS = {"code_file_path", "code_function_name", "code_line_number", "flags", "observed_timestamp", "scope_name",
+                      "service_instance_id", "severity_number", "severity_text", "telemetry_sdk_language",
+                      "telemetry_sdk_name", "telemetry_sdk_version", "trace_id", "span_id", "detected_level"}
 UI_DIR = Path(__file__).resolve().parents[2] / "ui"
 
 
@@ -150,6 +155,34 @@ async def stream_events(request_id: str) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/api/logs/{trace_id}")
+async def logs_for_trace(trace_id: str = PathParam(pattern=r"^[0-9a-f]{32}$")) -> dict:
+    """Every log line (from every service) written while handling one trace, fetched from Loki.
+
+    The X-ray page shows these in the detail drawer. If Loki is not running we answer "unavailable" instead of failing.
+    """
+    now = time.time_ns()
+    try:
+        resp = await app.state.http.get(
+            f"{LOKI_URL}/loki/api/v1/query_range", timeout=10,
+            params={"query": f'{{service_name=~".+"}} | trace_id="{trace_id}"', "limit": 500, "direction": "forward",
+                    "start": now - 3600 * 10**9, "end": now + 60 * 10**9},
+            headers={"X-Loki-Response-Encoding-Flags": "categorize-labels"})  # asks Loki to include structured metadata
+        resp.raise_for_status()
+    except httpx.HTTPError:
+        return {"available": False, "logs": []}
+    logs = []
+    for stream in resp.json()["data"]["result"]:
+        for value in stream["values"]:
+            meta = value[2].get("structuredMetadata", {}) if len(value) > 2 and isinstance(value[2], dict) else {}
+            logs.append({"ts": int(value[0]) / 1e9, "service": stream["stream"].get("service_name"),
+                         "level": meta.get("detected_level") or stream["stream"].get("detected_level") or "info",
+                         "message": value[1], "span_id": meta.get("span_id"),
+                         "fields": {k: v for k, v in meta.items() if k not in _HIDDEN_LOG_FIELDS}})
+    logs.sort(key=lambda entry: entry["ts"])
+    return {"available": True, "logs": logs}
 
 
 @app.get("/requests")
