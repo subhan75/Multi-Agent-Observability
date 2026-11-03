@@ -20,6 +20,7 @@ class RequestRecord:
     events: list[dict] = field(default_factory=list)
     subscribers: set[asyncio.Queue] = field(default_factory=set)
     finished: bool = False
+    run_id: str | None = None   # LangSmith run id, filled in when the agents service answers
 
 
 class EventStore:
