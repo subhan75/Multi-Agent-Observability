@@ -271,6 +271,8 @@ function showAnswerDetails(p) {
   const parts = [];
   if (p.visited && p.visited.length) parts.push("workers: " + p.visited.join(" → "));
   if (p.tools_used) parts.push("tools: " + (p.tools_used.length ? p.tools_used.join(", ") : "none"));
+  if (p.llm_calls) parts.push(p.llm_calls + " model calls, " + (p.input_tokens + p.output_tokens).toLocaleString() + " tokens ("
+      + p.input_tokens.toLocaleString() + " in / " + p.output_tokens.toLocaleString() + " out), est. $" + p.cost_usd.toFixed(4));
   if (p.prompt_version) parts.push("prompt version " + p.prompt_version);
   if (p.langsmith_run_id) parts.push("LangSmith run " + p.langsmith_run_id);
   $("answer-meta").textContent = parts.join("  ·  ");
