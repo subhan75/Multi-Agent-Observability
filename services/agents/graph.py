@@ -42,6 +42,8 @@ class SupportState(TypedDict, total=False):
     last_step: str  # which worker ran most recently (used to draw the UI edge back to the supervisor)
     steps: int
     answer: str
+    visited: list[str]      # which workers ran, in order (used by the evaluations and the X-ray)
+    tools_used: list[str]   # which tools the order agent actually called
 
 
 class Decision(BaseModel):
@@ -126,7 +128,7 @@ def order_agent(state: SupportState) -> SupportState:
         info = result["messages"][-1].text
         out.update(order_info=info, summary=info[:90])
         logger.info("order agent finished", extra={"answer_chars": len(info)})
-    return {"order_info": info, "last_step": "order_agent"}
+    return {"order_info": info, "last_step": "order_agent", "visited": state.get("visited", []) + ["order_agent"]}
 
 
 @track_node("policy_agent")
@@ -143,7 +145,7 @@ def policy_agent(state: SupportState) -> SupportState:
         prompt = prompts.POLICY_AGENT.format(excerpts="\n\n".join(excerpts), question=state["question"])
         info = _ask("policy_agent", prompt).text
         out.update(policy_info=info, summary=info[:90])
-    return {"policy_info": info, "last_step": "policy_agent"}
+    return {"policy_info": info, "last_step": "policy_agent", "visited": state.get("visited", []) + ["policy_agent"]}
 
 
 @track_node("writer")
@@ -158,7 +160,7 @@ def writer(state: SupportState) -> SupportState:
         answer = _ask("writer", prompt).text
         out.update(answer=answer, summary=answer[:90])
         logger.info("writer produced the final answer", extra={"answer_chars": len(answer)})
-    return {"answer": answer, "last_step": "writer"}
+    return {"answer": answer, "last_step": "writer", "visited": state.get("visited", []) + ["writer"]}
 
 
 def build_graph():
