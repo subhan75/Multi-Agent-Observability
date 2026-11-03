@@ -126,9 +126,12 @@ def order_agent(state: SupportState) -> SupportState:
         agent = create_agent(_llm(), tools=[get_order], system_prompt=prompts.ORDER_AGENT)
         result = agent.invoke({"messages": [HumanMessage(state["question"])]})
         info = result["messages"][-1].text
-        out.update(order_info=info, summary=info[:90])
+        # Every tool the model asked for appears as a tool_call on one of the AI messages.
+        tools_used = [call["name"] for message in result["messages"] for call in (getattr(message, "tool_calls", None) or [])]
+        out.update(order_info=info, tools_used=tools_used, summary=info[:90])
         logger.info("order agent finished", extra={"answer_chars": len(info)})
-    return {"order_info": info, "last_step": "order_agent", "visited": state.get("visited", []) + ["order_agent"]}
+    return {"order_info": info, "last_step": "order_agent", "tools_used": tools_used,
+            "visited": state.get("visited", []) + ["order_agent"]}
 
 
 @track_node("policy_agent")
