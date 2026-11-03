@@ -64,6 +64,10 @@
   #answer { display: none; border-left: 4px solid var(--ok); }
   #answer.error { border-color: var(--err); }
   #answer p { margin: 0; white-space: pre-wrap; }
+  .meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+  #answer-meta { margin-top: 10px; }
+  #feedback { margin-top: 10px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  #feedback button { padding: 3px 12px; }
   #timeline { display: grid; gap: 6px; }
   details.card { border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 8px; background: var(--bg); }
   details.card.running { border-left-color: var(--accent); }
@@ -112,7 +116,12 @@
       <svg id="graph" viewBox="0 0 900 440" role="img" aria-label="Architecture graph"></svg>
     </section>
 
-    <section class="panel" id="answer"><h2 id="answer-title">Final answer</h2><p id="answer-text"></p></section>
+    <section class="panel" id="answer"><h2 id="answer-title">Final answer</h2><p id="answer-text"></p>
+      <div class="meta" id="answer-meta"></div>
+      <div id="feedback"><span class="meta">Was this answer helpful?</span>
+        <button type="button" id="fb-up" title="Helpful">👍</button>
+        <button type="button" id="fb-down" title="Not helpful">👎</button>
+        <span class="meta" id="fb-msg"></span></div></section>
 
     <section class="panel">
       <h2>Step timeline</h2>
@@ -144,7 +153,7 @@ const EDGES = [
 ];
 const KIND_LABEL = { step_start: "step", step_end: "step", step_error: "error", llm_call: "LLM call",
                      tool_call: "tool call", retrieval: "retrieval", db_read: "DB read",
-                     request_done: "done", request_error: "failed" };
+                     request_done: "done", request_error: "failed", feedback: "feedback" };
 
 const GRAFANA = "http://localhost:3000";   // Grafana runs in Docker on this computer (Phase 2)
 const $ = (id) => document.getElementById(id);
@@ -257,6 +266,28 @@ function showTrace(traceId) {
   $("trace").replaceChildren(" · ", a, " · ", logs);
 }
 
+// ---------- What ran, and user feedback ----------
+function showAnswerDetails(p) {
+  const parts = [];
+  if (p.visited && p.visited.length) parts.push("workers: " + p.visited.join(" → "));
+  if (p.tools_used) parts.push("tools: " + (p.tools_used.length ? p.tools_used.join(", ") : "none"));
+  if (p.prompt_version) parts.push("prompt version " + p.prompt_version);
+  if (p.langsmith_run_id) parts.push("LangSmith run " + p.langsmith_run_id);
+  $("answer-meta").textContent = parts.join("  ·  ");
+  $("fb-msg").textContent = ""; $("fb-up").disabled = false; $("fb-down").disabled = false;
+}
+async function sendFeedback(score) {
+  $("fb-up").disabled = true; $("fb-down").disabled = true;
+  try {
+    const res = await fetch("/feedback", { method: "POST", headers: { "Content-Type": "application/json" },
+                                           body: JSON.stringify({ request_id: currentId, score }) });
+    const out = await res.json();
+    $("fb-msg").textContent = res.ok ? "Thanks! " + out.detail : "Could not send feedback (" + res.status + ")";
+  } catch { $("fb-msg").textContent = "Network error"; }
+}
+$("fb-up").addEventListener("click", () => sendFeedback(1));
+$("fb-down").addEventListener("click", () => sendFeedback(0));
+
 // ---------- Apply one event to the view ----------
 function apply(ev) {
   if (view.t0 === null) view.t0 = ev.ts;
@@ -284,6 +315,7 @@ function apply(ev) {
   } else if (ev.kind === "request_done") {
     nodeState("user", "done");
     $("answer-title").textContent = "Final answer"; $("answer-text").textContent = ev.payload.answer;
+    showAnswerDetails(ev.payload);
     $("answer").style.display = "block";
   } else if (ev.kind === "request_error") {
     $("answer-title").textContent = "Request failed"; $("answer-text").textContent = ev.payload.error;
