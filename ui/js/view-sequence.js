@@ -8,7 +8,18 @@ import { LANES, NODES } from "./nodes.js";
 import { stateAt } from "./time.js";
 import { clip, fmtMs, s } from "./util.js";
 
-const LANE_W = 112, HEAD_H = 58, ROW_H = 30, SIDE = 18;
+const LANE_W = 76, HEAD_H = 46, ROW_H = 30, SIDE = 10;
+
+/** Split a label into at most two lines at a space, e.g. "Inventory service" -> ["Inventory", "service"]. */
+function wrap(text, max = 11) {
+  if (text.length <= max || !text.includes(" ")) return [text];
+  const words = text.split(" "), lines = [""];
+  for (const w of words) {
+    if ((lines[lines.length - 1] + " " + w).trim().length <= max || lines.length === 2) lines[lines.length - 1] = (lines[lines.length - 1] + " " + w).trim();
+    else lines.push(w);
+  }
+  return lines;
+}
 
 export function renderSequence(container, model, ui) {
   const { spans } = model.derived();
@@ -35,9 +46,10 @@ export function renderSequence(container, model, ui) {
   const head = s("svg", { width, height: HEAD_H, role: "presentation" });
   for (const id of LANES) {
     const n = NODES[id], x = laneX(id);
-    head.append(s("g", { class: `lane-head g-${n.group}` },
-      s("rect", { x: x - LANE_W / 2 + 4, y: 4, width: LANE_W - 8, height: HEAD_H - 10 }),
-      s("text", { x, y: 24 }, clip(n.label, 17)), s("text", { class: "sub", x, y: 40 }, clip(n.sub, 21))));
+    const lines = wrap(n.label);
+    head.append(s("g", { class: `lane-head g-${n.group}` }, s("title", {}, `${n.label}: ${n.sub}`),
+      s("rect", { x: x - LANE_W / 2 + 3, y: 4, width: LANE_W - 6, height: HEAD_H - 10 }),
+      ...lines.map((line, i) => s("text", { x, y: (lines.length === 1 ? 26 : 19) + i * 13 }, line))));
   }
   const headWrap = document.createElement("div");
   headWrap.style.cssText = "position:sticky;top:0;z-index:2;background:var(--panel);border-bottom:1px solid var(--line)";
@@ -66,7 +78,7 @@ export function renderSequence(container, model, ui) {
       && rowOf.get(`call:${o.id}`) < rowOf.get(`call:${sp.id}`)).length;
     const state = stateAt(sp, T), group = NODES[sp.route.to].group;
     svg.append(s("rect", { class: `activation g-${group}${state === "running" ? " running" : ""}${state === "error" ? " error" : ""}`, "data-span": sp.id,
-      x: laneX(sp.route.to) - 6 + nest * 5, y: top - 2, width: 12, height: Math.max(bottom - top + 4, 10), rx: 3, onclick: () => ui.onSelect(sp.id) }));
+      x: laneX(sp.route.to) - 5 + nest * 4, y: top - 2, width: 10, height: Math.max(bottom - top + 4, 10), rx: 3, onclick: () => ui.onSelect(sp.id) }));
   }
 
   // arrows + labels + click targets
