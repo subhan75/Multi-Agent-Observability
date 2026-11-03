@@ -30,7 +30,8 @@ export function renderWaterfall(container, model, ui) {
 
   visible.forEach((sp, i) => {
     const y = TOP + i * ROW, state = stateAt(sp, ui.T), end = endAt(sp, ui.T);
-    const group = NODES[sp.actor]?.group ?? "client";
+    // colour by the component the step is AIMED at (Gemini pink, orders green...), not by who made the call
+    const group = NODES[sp.route?.to ?? sp.actor]?.group ?? "client";
     const bx = x(sp.start), bw = Math.max(x(end) - bx, 2.5);
     const row = s("g", { class: `wf-row g-${group}${sp.id === ui.selectedId ? " selected" : ""}`, "data-span": sp.id, tabindex: 0, role: "button",
       "aria-label": `${shortLabel(sp)}, ${fmtMs((end - sp.start) * 1000)}`,
