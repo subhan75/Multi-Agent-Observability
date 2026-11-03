@@ -9,7 +9,7 @@ import { renderDrawer } from "./drawer.js";
 import { describe } from "./describe.js";
 import { stateAt } from "./time.js";
 import { NODES } from "./nodes.js";
-import { clip, fmtInt, fmtMs, fmtUsd, h } from "./util.js";
+import { clip, fill, fmtInt, fmtMs, fmtUsd, h } from "./util.js";
 
 const GRAFANA = "http://localhost:3000";
 const VIEWS = { architecture: renderArchitecture, sequence: renderSequence, waterfall: renderWaterfall };
@@ -59,7 +59,7 @@ function renderSummary() {
     links.push(h("a", { href: `${GRAFANA}/explore?schemaVersion=1&orgId=1&panes=${pane("tempo", "tempo", model.traceId, "traceql")}`, target: "_blank", rel: "noopener" }, "trace in Grafana ↗"),
       h("a", { href: `${GRAFANA}/explore?schemaVersion=1&orgId=1&panes=${pane("loki", "loki", `{service_name=~".+"} | trace_id="${model.traceId}"`, "range")}`, target: "_blank", rel: "noopener" }, "logs ↗"));
   }
-  $("summary").replaceChildren(
+  fill($("summary"),
     h("span", { class: `status-pill ${status[0]}` }, status[1]),
     hasData ? stat("total time", fmtMs(st.duration)) : null,
     hasData ? stat("steps (calls)", String(model.derived().steps)) : null,

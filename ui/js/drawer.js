@@ -5,7 +5,7 @@
 import { NODES } from "./nodes.js";
 import { describe, metricsFor, sinksFor } from "./describe.js";
 import { stateAt } from "./time.js";
-import { clip, copy, fmtInt, fmtMs, fmtUsd, h, pretty } from "./util.js";
+import { clip, copy, fill, fmtInt, fmtMs, fmtUsd, h, pretty } from "./util.js";
 
 const FACT_LABELS = {
   "http.method": "method", "http.url": "URL", "http.route": "route", "http.status_code": "status",
@@ -39,7 +39,7 @@ export function renderDrawer(container, model, ui) {
   const pill = state === "error" ? h("span", { class: "pill err" }, "error")
     : state === "running" ? h("span", { class: "pill run" }, "running") : h("span", { class: "pill ok" }, "ok");
 
-  container.replaceChildren(
+  fill(container,
     h("div", { class: `head g-${group}` },
       h("div", { class: "kicker" }, h("span", { class: "dot" }), span.step ? `Step ${span.step}` : "Inside a step", " · ", NODES[span.actor]?.label ?? span.service, pill),
       h("h3", {}, d.title),
