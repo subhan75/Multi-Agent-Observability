@@ -29,6 +29,14 @@ function build(el, attrs, children) {
   return el;
 }
 
+/**
+ * Replace everything inside `container` with `children`, skipping null / undefined / false.
+ * (The browser's own replaceChildren would turn a null into the visible text "null".)
+ */
+export function fill(container, ...children) {
+  container.replaceChildren(...children.flat().filter((c) => c !== null && c !== undefined && c !== false));
+}
+
 /** 1234 ms -> "1.23 s"; 5.2 ms -> "5.2 ms" */
 export function fmtMs(ms) {
   if (ms === null || ms === undefined || Number.isNaN(ms)) return "…";
