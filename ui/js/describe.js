@@ -80,6 +80,9 @@ export function shortLabel(span) {
 export function metricsFor(span) {
   const a = span.attrs;
   if (a["db.system"]) return [];
+  if (span.route?.to === "gemini") {   // the model call itself: the wrapper around it records all of these
+    return ["llm_calls_total", "llm_call_duration_seconds", "llm_tokens_total  (input / output)", "llm_cost_usd_total"];
+  }
   if (span.kind === "SERVER") {
     return ["http_requests_total  (method, route, status)", "http_request_duration_seconds  (histogram)", "http_requests_in_flight  (up while the request runs)"];
   }
