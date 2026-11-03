@@ -10,7 +10,6 @@ Every node reports what it received and produced via `step(...)` (see common/eve
 which is what powers the live "request X-ray" UI.
 """
 import logging
-import os
 import time
 from typing import Literal, TypedDict
 
@@ -21,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from services.agents import prompts
+from services.agents.models import current_model_name
 from services.agents.rag import retrieve
 from services.agents.tools import get_order
 from services.common.events import emit_event, step
@@ -30,7 +30,6 @@ from services.common.telemetry import get_tracer, set_span_attributes, traced
 logger = logging.getLogger(__name__)
 
 MAX_STEPS = 5  # safety net against supervisor loops
-DEFAULT_MODEL = "gemini-4-argon"
 
 
 class SupportState(TypedDict, total=False):
@@ -49,10 +48,6 @@ class SupportState(TypedDict, total=False):
 class Decision(BaseModel):
     """Structured output the supervisor must return."""
     next_step: Literal["order_agent", "policy_agent", "writer"]
-
-
-def current_model_name() -> str:
-    return os.getenv("GEMINI_MODEL", DEFAULT_MODEL)
 
 
 
