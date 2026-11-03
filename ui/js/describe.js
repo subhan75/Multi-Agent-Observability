@@ -67,6 +67,13 @@ export function describe(span) {
   return { title: span.name, plain: "A step recorded by OpenTelemetry." };
 }
 
+/** A compact name for lists and bars, e.g. "Gemini API · POST generateContent" or "Supervisor · run". */
+export function shortLabel(span) {
+  return span.route
+    ? `${label(span.route.to)} · ${span.route.label}`
+    : `${label(span.actor)} · ${span.attrs["http.route"] ?? span.attrs["http.target"] ?? span.name}`;
+}
+
 /** Which Prometheus metrics this kind of step updates (the numbers you would see move in Grafana). */
 export function metricsFor(span) {
   const a = span.attrs;
