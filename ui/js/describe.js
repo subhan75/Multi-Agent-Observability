@@ -71,7 +71,9 @@ export function describe(span) {
 export function shortLabel(span) {
   return span.route
     ? `${label(span.route.to)} · ${span.route.label}`
-    : `${label(span.actor)} · ${span.attrs["http.route"] ?? span.attrs["http.target"] ?? span.name}`;
+    : span.attrs["http.route"] || span.attrs["http.target"]
+      ? `${label(span.actor)} · ${span.attrs["http.method"] ?? ""} ${span.attrs["http.route"] ?? span.attrs["http.target"]}`.replace("·  ", "· ")
+      : `${label(span.actor)} · ${span.name}`;
 }
 
 /** Which Prometheus metrics this kind of step updates (the numbers you would see move in Grafana). */
