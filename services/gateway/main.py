@@ -69,12 +69,15 @@ async def support(body: Question) -> dict:
         raise HTTPException(status_code=502, detail="Agents service failed") from exc
 
     result = resp.json()
+    store.get_or_create(request_id).run_id = result["run_id"]  # needed later to attach user feedback
     elapsed = (time.perf_counter() - started) * 1000
     logger.info("support request finished", extra={"request_id": request_id, "duration_ms": round(elapsed), "agent_steps": result["steps"]})
     store.add(make_event(request_id, "gateway", "step_end", {"summary": "answer returned"},
                          duration_ms=elapsed, span_id=span_id))
     store.add(make_event(request_id, "gateway", "request_done",
-                         {"answer": result["answer"], "agent_steps": result["steps"], "trace_id": trace_id}, duration_ms=elapsed))
+                         {"answer": result["answer"], "agent_steps": result["steps"], "trace_id": trace_id,
+                          "langsmith_run_id": result["run_id"], "prompt_version": result["prompt_version"],
+                          "visited": result["visited"], "tools_used": result["tools_used"]}, duration_ms=elapsed))
     return {"request_id": request_id, "trace_id": trace_id, **result}
 
 
