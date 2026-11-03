@@ -24,7 +24,7 @@ from services.agents.models import current_model_name
 from services.agents.rag import retrieve
 from services.agents.tools import get_order
 from services.common.events import emit_event, step
-from services.common.metrics import record_supervisor_decision, track_llm, track_node
+from services.common.metrics import record_llm_usage, record_supervisor_decision, track_llm, track_node
 from services.common.telemetry import get_tracer, set_span_attributes, traced
 
 logger = logging.getLogger(__name__)
@@ -56,27 +56,48 @@ def _llm() -> ChatGoogleGenerativeAI:
 
 
 def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
-    """Call Gemini once, reporting the prompt, response and latency as an event."""
+    """Call Gemini once. Records: a trace span, metrics (count, time, tokens, cost), a log line and an X-ray event.
+
+    Returns the model's message (plain call) or the parsed object (when `schema` is given).
+    """
     llm = _llm()
+    model = current_model_name()
     started = time.perf_counter()
-    # OpenTelemetry: one span per Gemini call, labelled with the model and which agent asked.
+    # OpenTelemetry: one span per Gemini call. The gen_ai.* names are OpenTelemetry's official
+    # "semantic conventions" for AI calls, so any tool that understands them can read these spans.
     with get_tracer().start_as_current_span("gemini.generate") as span:
-        span.set_attribute("gen_ai.request.model", current_model_name())
+        span.set_attribute("gen_ai.operation.name", "chat")
+        span.set_attribute("gen_ai.provider.name", "gcp.gemini")
+        span.set_attribute("gen_ai.request.model", model)
+        span.set_attribute("gen_ai.request.temperature", 0)
         span.set_attribute("shopsense.agent", parent)
-        with track_llm(current_model_name(), parent):  # Prometheus: count + time this call, even if it fails
+        with track_llm(model, parent):  # Prometheus: count + time this call, even if it fails
             if schema is None:
-                result = llm.invoke(prompt)
-                response = result.text  # `.text` flattens Gemini's content blocks into a plain string
+                message = llm.invoke(prompt)
+                result, response = message, message.text  # `.text` flattens Gemini's content blocks into a string
             else:
-                result = llm.with_structured_output(schema).invoke(prompt)
+                # include_raw=True also hands back the model's raw message, which is where the token counts live
+                out = llm.with_structured_output(schema, include_raw=True).invoke(prompt)
+                if out["parsing_error"]:
+                    raise out["parsing_error"]
+                message, result = out["raw"], out["parsed"]
                 response = result.model_dump()
-    logger.info("llm call finished", extra={"agent": parent, "model": current_model_name(),
-                                           "duration_ms": round((time.perf_counter() - started) * 1000)})
+        usage = message.usage_metadata or {}
+        input_tokens, output_tokens = usage.get("input_tokens", 0), usage.get("output_tokens", 0)
+        cost = record_llm_usage(model, parent, input_tokens, output_tokens)
+        span.set_attribute("gen_ai.response.model", (message.response_metadata or {}).get("model_name", model))
+        span.set_attribute("gen_ai.usage.input_tokens", input_tokens)
+        span.set_attribute("gen_ai.usage.output_tokens", output_tokens)
+        span.set_attribute("shopsense.cost_usd", cost)
+    duration_ms = (time.perf_counter() - started) * 1000
+    logger.info("llm call finished", extra={"agent": parent, "model": model, "duration_ms": round(duration_ms),
+                                           "input_tokens": input_tokens, "output_tokens": output_tokens})
     emit_event(
         "gemini", "llm_call",
-        {"from": parent, "model": current_model_name(), "prompt": prompt, "response": response,
-         "summary": f"{current_model_name()} ← {parent}"},
-        caller=parent, duration_ms=(time.perf_counter() - started) * 1000,
+        {"from": parent, "model": model, "prompt": prompt, "response": response,
+         "input_tokens": input_tokens, "output_tokens": output_tokens, "cost_usd": round(cost, 6),
+         "summary": f"{model} <- {parent}"},
+        caller=parent, duration_ms=duration_ms,
     )
     return result
 
