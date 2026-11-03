@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field
 from services.common.config import service_url
 from services.common.events import REQUEST_ID_HEADER, make_event
 from services.common.metrics import install_metrics
-from services.common.telemetry import current_trace_id, instrument_app, setup_telemetry
+from services.common.telemetry import current_trace_id, instrument_app, setup_telemetry, track_request
 from services.gateway.store import EventStore
 
 logger = logging.getLogger(__name__)
@@ -47,9 +47,17 @@ class Question(BaseModel):
 @app.post("/support")
 async def support(body: Question) -> dict:
     request_id = body.request_id or uuid.uuid4().hex[:8]
+    # track_request marks this request, and every span downstream of it, as "watched" for the X-ray page.
+    with track_request(request_id):
+        return await _answer_question(body, request_id)
+
+
+async def _answer_question(body: Question, request_id: str) -> dict:
     store.get_or_create(request_id, body.question)
     span_id = uuid.uuid4().hex[:8]
     trace_id = current_trace_id()  # the OpenTelemetry trace id of this request (lets the UI link to Grafana)
+    if trace_id:
+        store.register_trace(trace_id, request_id)  # lets the store attribute this trace's spans to this request
     started = time.perf_counter()
     logger.info("support request received", extra={"request_id": request_id, "question_chars": len(body.question)})
 
