@@ -37,7 +37,7 @@ function render() {
   if (!hasData) {
     $("stage").replaceChildren(h("div", { class: "empty" }, h("h3", {}, "Ask a question to watch it travel"),
       h("p", {}, "Every box, arrow and bar you will see is a real step that OpenTelemetry recorded: nothing is simulated or summarised."),
-      h("p", { class: "muted" }, "Pick an example above or type your own, then press Send. Past requests appear on the left and can be replayed.")));
+      h("p", { class: "muted" }, "Pick an example above or type your own, then press Send. Past requests are in the drop-down at the top right and can be replayed.")));
     $("drawer").replaceChildren(h("h2", {}, "Step details"), h("div", { class: "empty" }, h("p", {}, "Click any step once there is one.")));
     renderSummary(); renderCaption(); renderPlayback(); renderAnswer();
     return;
