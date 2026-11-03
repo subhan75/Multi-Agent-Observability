@@ -21,12 +21,16 @@ attaches that span's trace id to the measurement. Prometheus keeps it, and Grafa
 clickable dot on a graph that opens the exact trace behind a slow request. No extra code needed here.
 """
 import functools
+import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 
 from opentelemetry import metrics
 from starlette.requests import Request
+
+from services.common.pricing import cost_usd
 
 HTTP_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60, 120]
 LLM_BUCKETS = [0.5, 1, 2, 5, 10, 20, 30, 60, 120]
@@ -57,6 +61,10 @@ NODE_DURATION = _meter.create_histogram(
     explicit_bucket_boundaries_advisory=LLM_BUCKETS)
 SUPERVISOR_DECISIONS = _meter.create_counter(
     "supervisor_decisions", unit="{decision}", description="Which step the supervisor chose")
+LLM_TOKENS = _meter.create_counter(
+    "llm_tokens", unit="{token}", description="Tokens processed by the LLM (direction = input or output)")
+LLM_COST = _meter.create_counter(
+    "llm_cost_usd", unit="{usd}", description="Estimated LLM spend in US dollars (see services/common/model_prices.json)")
 USER_FEEDBACK = _meter.create_counter(
     "user_feedback", unit="{vote}", description="Thumbs up / down given by users on answers")
 TOOL_CALLS = _meter.create_counter(
@@ -133,6 +141,36 @@ def track_node(node: str) -> Callable:
         return wrapper
 
     return decorator
+
+
+# A running total for the question being answered. The agents service puts a dict here before running the
+# graph; every model call adds to it, so the answer can report "this question cost N tokens / $X".
+# (A ContextVar holds a dict BY REFERENCE, so worker threads that copy the context still add to the same dict.)
+request_usage_var: ContextVar[dict | None] = ContextVar("request_usage", default=None)
+_usage_lock = threading.Lock()
+
+
+def new_usage_tally() -> dict:
+    return {"input_tokens": 0, "output_tokens": 0, "cost_usd": 0.0, "llm_calls": 0}
+
+
+def record_llm_usage(model: str, caller: str, input_tokens: int, output_tokens: int) -> float:
+    """Count the tokens of one model call, estimate its cost, add both to the current question's tally.
+
+    Returns the estimated cost in USD. Thinking tokens are billed (and reported) as output tokens.
+    """
+    cost = cost_usd(model, input_tokens, output_tokens)
+    LLM_TOKENS.add(input_tokens, {"model": model, "caller": caller, "direction": "input"})
+    LLM_TOKENS.add(output_tokens, {"model": model, "caller": caller, "direction": "output"})
+    LLM_COST.add(cost, {"model": model, "caller": caller})
+    tally = request_usage_var.get()
+    if tally is not None:
+        with _usage_lock:
+            tally["input_tokens"] += input_tokens
+            tally["output_tokens"] += output_tokens
+            tally["cost_usd"] += cost
+            tally["llm_calls"] += 1
+    return cost
 
 
 def record_feedback(score: int) -> None:
