@@ -15,7 +15,8 @@ from langsmith import Client
 
 load_dotenv()
 
-DEFAULT_DATASET = "shopsense-support-v1"
+# Bump the version when questions.json changes in a way that alters scores. Old experiments stay comparable to the old dataset.
+DEFAULT_DATASET = "shopsense-support-v2"
 QUESTIONS_FILE = Path(__file__).parent / "questions.json"
 
 
