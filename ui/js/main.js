@@ -262,7 +262,11 @@ $("play").addEventListener("click", () => (playing ? stopPlayback() : startPlayb
 $("step").addEventListener("click", () => jumpToCall(1));
 $("back").addEventListener("click", () => jumpToCall(-1));
 $("speed").addEventListener("change", (e) => { speed = Number(e.target.value); });
-$("scrub").addEventListener("input", (e) => { stopPlayback(); setT(bounds().t0 + Number(e.target.value) / 1000); });
+$("scrub").addEventListener("input", (e) => {
+  const wanted = Number(e.target.value);   // read the dragged value FIRST: stopPlayback() redraws the slider at the old time
+  stopPlayback();
+  setT(bounds().t0 + wanted / 1000);
+});
 $("fb-up").addEventListener("click", () => sendFeedback(1));
 $("fb-down").addEventListener("click", () => sendFeedback(0));
 $("stage").addEventListener("keydown", (e) => {
