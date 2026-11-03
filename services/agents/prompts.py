@@ -1,4 +1,5 @@
-"""All prompts in one place, so prompt changes are easy to find (and later, to version)."""
+"""All prompts in one place, so prompt changes are easy to find and to version."""
+import hashlib
 
 SUPERVISOR = """You coordinate a customer-support team. Decide the next step.
 
@@ -27,3 +28,18 @@ If something is missing, say so honestly instead of guessing.
 Question: {question}
 Order info: {order_info}
 Policy info: {policy_info}"""
+
+
+def _compute_version() -> str:
+    """A short fingerprint of every prompt text above.
+
+    Change a single character in any prompt and this changes. It is attached to every LangSmith run
+    and evaluation, so you can always tell WHICH wording produced a result, with nothing to remember to bump.
+    """
+    texts = [value for name, value in sorted(globals().items())
+             if name.isupper() and name != "PROMPT_VERSION" and isinstance(value, str)]
+    separator = chr(10) + "---" + chr(10)  # a line, three dashes, a line (kept as chr(10) to avoid escape-sequence confusion)
+    return hashlib.sha256(separator.join(texts).encode("utf-8")).hexdigest()[:8]
+
+
+PROMPT_VERSION = _compute_version()
