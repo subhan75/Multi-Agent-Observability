@@ -15,16 +15,12 @@
   <form id="ask">
     <input id="q" type="text" placeholder="Ask a support question…" value="Where is order 42, and can I return it?" autocomplete="off" aria-label="Your question">
     <button class="btn primary" id="go" type="submit">Send</button>
+    <select id="history-select" class="btn" aria-label="Replay a past request" title="Replay a past request"><option value="">Past requests…</option></select>
   </form>
   <div class="chips" id="chips"></div>
 </header>
 
 <div class="layout">
-  <aside class="panel" id="history">
-    <h2>Requests</h2>
-    <ul id="history-list"></ul>
-  </aside>
-
   <main>
     <section class="panel" id="summary" aria-label="Summary of this request"></section>
     <div id="caption" class="hidden" aria-live="polite"></div>

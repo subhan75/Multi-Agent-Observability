@@ -210,17 +210,15 @@ async function loadRequest(id) {
 
 async function loadHistory() {
   const list = await (await fetch("/requests")).json();
-  const ul = $("history-list"); ul.replaceChildren();
+  const select = $("history-select");
+  select.replaceChildren(h("option", { value: "" }, `Past requests (${list.length})…`));
   for (const r of list) {
     const when = new Date(r.created * 1000).toLocaleTimeString();
-    ul.append(h("li", { "data-id": r.request_id, onclick: () => loadRequest(r.request_id), tabindex: 0, role: "button",
-      onkeydown: (e) => { if (e.key === "Enter") loadRequest(r.request_id); } },
-      h("span", {}, clip(r.question || "(no question)", 44)),
-      h("small", {}, `${when} · ${r.finished ? "finished" : "running"} · ${r.events} events`)));
+    select.append(h("option", { value: r.request_id }, `${when} · ${clip(r.question || "(no question)", 40)}${r.finished ? "" : " (running)"}`));
   }
   markCurrent();
 }
-function markCurrent() { document.querySelectorAll("#history-list li").forEach((li) => li.classList.toggle("current", li.dataset.id === currentId)); }
+function markCurrent() { $("history-select").value = [...$("history-select").options].some((o) => o.value === currentId) ? currentId : ""; }
 
 // ---------------------------------------------------------------------------------------- feedback
 async function sendFeedback(score) {
@@ -233,6 +231,7 @@ async function sendFeedback(score) {
 }
 
 // ---------------------------------------------------------------------------------------- wiring
+$("history-select").addEventListener("change", (e) => { if (e.target.value) loadRequest(e.target.value); });
 $("ask").addEventListener("submit", async (e) => {
   e.preventDefault();
   const question = $("q").value.trim();
