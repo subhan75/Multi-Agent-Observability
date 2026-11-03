@@ -168,10 +168,12 @@ def policy_agent(state: SupportState) -> SupportState:
         with get_tracer().start_as_current_span("kb.retrieve") as span:
             excerpts = retrieve(state["question"])
             span.set_attribute("shopsense.sections_returned", len(excerpts))
-        logger.info("policy sections retrieved", extra={"sections_returned": len(excerpts)})
-        emit_event("kb", "retrieval",
-                   {"sections": [e.splitlines()[0] for e in excerpts], "summary": f"{len(excerpts)} policy sections"},
-                   caller="policy_agent")
+            # inside the kb.retrieve span, so this event and log line are stamped with its span id
+            logger.info("policy sections retrieved", extra={"sections_returned": len(excerpts)})
+            emit_event("kb", "retrieval",
+                       {"sections": [e.splitlines()[0] for e in excerpts], "excerpts": excerpts,
+                        "summary": f"{len(excerpts)} policy sections"},
+                       caller="policy_agent")
         prompt = prompts.POLICY_AGENT.format(excerpts="\n\n".join(excerpts), question=state["question"])
         info = _ask("policy_agent", prompt).text
         out.update(policy_info=info, summary=info[:90])
