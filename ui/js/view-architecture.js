@@ -61,7 +61,7 @@ export function renderArchitecture(container, model, ui) {
     s("path", { d: "M0,0 L10,5 L0,10 z", fill: "context-stroke" }))));
 
   for (const g of GROUP_BOXES) {
-    svg.append(s("rect", { class: "group-box", x: g.x, y: g.y, width: g.w, height: g.h }), s("text", { class: "group-label", x: g.x + 12, y: g.y + 16 }, g.label));
+    svg.append(s("rect", { class: "group-box", x: g.x, y: g.y, width: g.w, height: g.h }), s("text", { class: "group-label", x: g.x + 12, y: g.y + g.h - 10 }, g.label));
   }
 
   // ---- lines ----
@@ -72,10 +72,11 @@ export function renderArchitecture(container, model, ui) {
     if (edge.plane === "telemetry") cls += telemetry[edge.id] ? " seen telemetry" : " telemetry";
     else if (info) cls += info.errors ? " error" : info.running ? " calling" : " returned";
     svg.append(s("path", { class: cls, d: pathD(edge.points), "marker-end": "url(#arch-arrow)" }));
-    const mid = edge.points[Math.floor(edge.points.length / 2) - 1], mid2 = edge.points[Math.floor(edge.points.length / 2)];
-    const lx = (mid[0] + mid2[0]) / 2, ly = (mid[1] + mid2[1]) / 2;
-    if (info?.calls > 1) svg.append(s("text", { class: "edge-count", x: lx, y: ly - 4 }, `×${info.calls}`));
-    else if (edge.label && edge.plane === "telemetry") svg.append(s("text", { class: "edge-label", x: lx, y: ly - 4 }, edge.label));
+    // put labels on the final stretch of the line, close to the box it points at
+    const [ax, ay] = edge.points[edge.points.length - 2], [bx, by] = edge.points[edge.points.length - 1];
+    const lx = bx + (ax - bx) * 0.45, ly = by + (ay - by) * 0.45;
+    if (info?.calls > 1) svg.append(s("text", { class: "edge-count", x: lx, y: ly - 5 }, `×${info.calls}`));
+    else if (edge.label && edge.plane === "telemetry") svg.append(s("text", { class: "edge-label", x: lx, y: ly - 5 }, edge.label));
   }
 
   // ---- boxes ----
