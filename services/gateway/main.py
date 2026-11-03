@@ -77,7 +77,9 @@ async def support(body: Question) -> dict:
     store.add(make_event(request_id, "gateway", "request_done",
                          {"answer": result["answer"], "agent_steps": result["steps"], "trace_id": trace_id,
                           "langsmith_run_id": result["run_id"], "prompt_version": result["prompt_version"],
-                          "visited": result["visited"], "tools_used": result["tools_used"]}, duration_ms=elapsed))
+                          "visited": result["visited"], "tools_used": result["tools_used"],
+                          "llm_calls": result["llm_calls"], "input_tokens": result["input_tokens"],
+                          "output_tokens": result["output_tokens"], "cost_usd": result["cost_usd"]}, duration_ms=elapsed))
     return {"request_id": request_id, "trace_id": trace_id, **result}
 
 
