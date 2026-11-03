@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 
 MAX_REQUESTS = 50
 KEEPALIVE_SECONDS = 15
+MAX_PENDING_TRACES = 50     # traces whose spans arrived before we knew which request they belong to
+MAX_PENDING_EVENTS = 300    # per trace
 GRACE_SECONDS = 1.5
 TERMINAL_KINDS = {"request_done", "request_error"}
 
@@ -28,6 +30,8 @@ class EventStore:
 
     def __init__(self) -> None:
         self._records: OrderedDict[str, RequestRecord] = OrderedDict()
+        self._trace_to_request: OrderedDict[str, str] = OrderedDict()   # OpenTelemetry trace id -> our request id
+        self._pending: OrderedDict[str, list[dict]] = OrderedDict()     # span events waiting for that mapping
 
     def get_or_create(self, request_id: str, question: str = "") -> RequestRecord:
         record = self._records.get(request_id)
@@ -50,6 +54,30 @@ class EventStore:
             record.finished = True
         for queue in record.subscribers:
             queue.put_nowait(event)
+
+    def register_trace(self, trace_id: str, request_id: str) -> None:
+        """Learn which request a trace belongs to, and release any span events that were waiting for it."""
+        self._trace_to_request[trace_id] = request_id
+        while len(self._trace_to_request) > 200:
+            self._trace_to_request.popitem(last=False)
+        for event in self._pending.pop(trace_id, []):
+            event["request_id"] = request_id
+            self.add(event)
+
+    def add_span_event(self, event: dict) -> None:
+        """A span_start / span_end event. Downstream services tag it with the request id; the gateway's own
+        root span cannot, so it is matched by trace id (or held until register_trace is called)."""
+        trace_id = event.get("otel_trace_id")
+        request_id = event.get("request_id") or self._trace_to_request.get(trace_id)
+        if request_id:
+            event["request_id"] = request_id
+            self.add(event)
+            return
+        bucket = self._pending.setdefault(trace_id, [])
+        if len(bucket) < MAX_PENDING_EVENTS:
+            bucket.append(event)
+        while len(self._pending) > MAX_PENDING_TRACES:
+            self._pending.popitem(last=False)   # never let unattributed spans (e.g. static files) pile up
 
     def summaries(self) -> list[dict]:
         return [
