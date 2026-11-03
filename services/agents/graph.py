@@ -20,6 +20,7 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from services.agents import prompts
+from services.agents.callbacks import AgentLLMRecorder
 from services.agents.models import current_model_name
 from services.agents.rag import retrieve
 from services.agents.tools import get_order
@@ -141,11 +142,18 @@ def supervisor(state: SupportState) -> SupportState:
 def order_agent(state: SupportState) -> SupportState:
     with step("order_agent", "supervisor", {"question": state["question"]}) as out:
         agent = create_agent(_llm(), tools=[get_order], system_prompt=prompts.ORDER_AGENT)
-        result = agent.invoke({"messages": [HumanMessage(state["question"])]})
+        # The agent makes its own model calls inside LangChain; this callback observes each one
+        # (tokens, cost, duration, an X-ray event). See callbacks.py.
+        recorder = AgentLLMRecorder("order_agent")
+        result = agent.invoke({"messages": [HumanMessage(state["question"])]}, config={"callbacks": [recorder]})
+        set_span_attributes({"gen_ai.usage.input_tokens": recorder.input_tokens,
+                             "gen_ai.usage.output_tokens": recorder.output_tokens,
+                             "shopsense.llm_calls": recorder.calls})
         info = result["messages"][-1].text
         # Every tool the model asked for appears as a tool_call on one of the AI messages.
         tools_used = [call["name"] for message in result["messages"] for call in (getattr(message, "tool_calls", None) or [])]
-        out.update(order_info=info, tools_used=tools_used, summary=info[:90])
+        out.update(order_info=info, tools_used=tools_used, llm_calls=recorder.calls,
+                   input_tokens=recorder.input_tokens, output_tokens=recorder.output_tokens, summary=info[:90])
         logger.info("order agent finished", extra={"answer_chars": len(info)})
     return {"order_info": info, "last_step": "order_agent", "tools_used": tools_used,
             "visited": state.get("visited", []) + ["order_agent"]}
