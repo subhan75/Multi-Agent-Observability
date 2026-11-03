@@ -1,4 +1,5 @@
 """Gateway: public entry point (port 8000), event hub, and host of the X-ray UI."""
+import asyncio
 import logging
 import time
 import uuid
@@ -14,7 +15,7 @@ from pydantic import BaseModel, Field
 from services.common.config import service_url
 from services.common.events import REQUEST_ID_HEADER, make_event
 from services.common.metrics import install_metrics
-from services.common.telemetry import current_trace_id, instrument_app, setup_telemetry, track_request
+from services.common.telemetry import current_trace_id, instrument_app, set_span_sink, setup_telemetry, track_request
 from services.gateway.store import EventStore
 
 logger = logging.getLogger(__name__)
@@ -24,8 +25,13 @@ UI_DIR = Path(__file__).resolve().parents[2] / "ui"
 
 
 
+_loop: asyncio.AbstractEventLoop | None = None  # the web server's event loop, captured at startup
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _loop
+    _loop = asyncio.get_running_loop()
     app.state.http = httpx.AsyncClient(timeout=120)  # reused for every request (see orders/main.py)
     yield
     await app.state.http.aclose()
@@ -36,6 +42,19 @@ install_metrics(app)
 setup_telemetry("gateway")
 instrument_app(app)
 store = EventStore()
+
+
+def _span_sink(event: dict) -> None:
+    """The gateway's own spans go straight into the store (no HTTP to itself).
+
+    Spans end on whatever thread finished them, but the store is only safe on the event loop, so we hand
+    the event over with call_soon_threadsafe instead of touching the store directly.
+    """
+    if _loop is not None and _loop.is_running():
+        _loop.call_soon_threadsafe(store.add_span_event, event)
+
+
+set_span_sink(_span_sink, emit_untracked=True)  # untracked too: the root span starts before we know its request id
 
 
 class Question(BaseModel):
