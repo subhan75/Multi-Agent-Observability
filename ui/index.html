@@ -19,6 +19,7 @@
       <label id="mode-mock" title="A built-in stand-in for the AI: free and needs no API key. Everything else (the services, database, traces, metrics and logs) is real."><input type="radio" name="llm-mode" value="mock" checked> Mock AI</label>
       <label id="mode-live" title="Calls the real Gemini model"><input type="radio" name="llm-mode" value="live"> Live Gemini</label>
     </div>
+    <select id="chaos" class="btn hidden" aria-label="Inject a problem" title="Break something on purpose, then find it with the traces, metrics and logs"><option value="">No problem (healthy)</option></select>
     <select id="history-select" class="btn" aria-label="Replay a past request" title="Replay a past request"><option value="">Past requests…</option></select>
   </form>
   <div class="chips-row">

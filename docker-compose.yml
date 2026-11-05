@@ -31,6 +31,7 @@ x-python-service: &python-service
     INVENTORY_URL: http://inventory:8002
     AGENTS_URL: http://agents:8003
     LOKI_URL: http://loki:3100
+    CHAOS_ENABLED: ${CHAOS_ENABLED:-1}   # lets the X-ray page inject problems to practise on; set to 0 to disable
 
 services:
   inventory:

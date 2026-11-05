@@ -18,6 +18,7 @@ import httpx
 from opentelemetry import trace
 from opentelemetry.instrumentation.utils import suppress_instrumentation
 
+from services.common import chaos
 from services.common.config import service_url
 
 GATEWAY_URL = service_url("GATEWAY_URL", 8000)
@@ -28,9 +29,13 @@ request_id_var: ContextVar[str | None] = ContextVar("request_id", default=None)
 
 
 def current_headers() -> dict[str, str]:
-    """Headers to attach to an outgoing HTTP call so the next service joins the same request."""
+    """Headers to attach to an outgoing HTTP call so the next service joins the same request (and any injected problem)."""
     rid = request_id_var.get()
-    return {REQUEST_ID_HEADER: rid} if rid else {}
+    headers = {REQUEST_ID_HEADER: rid} if rid else {}
+    scenario = chaos.chaos_var.get()
+    if scenario:
+        headers[chaos.HEADER] = scenario
+    return headers
 
 
 def _jsonable(value: Any, limit: int = 4000) -> Any:

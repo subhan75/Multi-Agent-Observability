@@ -29,6 +29,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import RunnableLambda
 
 from services.agents import prompts
+from services.common import chaos
 
 DEFAULT_LATENCY_MS = "300-1200"
 _ORDER_WORDS = re.compile(r"\border\b|\bpackage\b|\bparcel\b|\btrack|\bin stock\b|\bstock\b", re.I)
@@ -40,6 +41,9 @@ _WRITER_PREFIX = prompts.WRITER.split("{")[0]
 # ---------------------------------------------------------------------------------------- helpers
 def _pause() -> None:
     """Sleep a random time inside the configured range, like a real model call takes time."""
+    if chaos.active("slow_llm"):          # injected problem: a slow model
+        time.sleep(random.uniform(1.5, 2.5))
+        return
     spec = os.getenv("MOCK_LLM_LATENCY_MS", DEFAULT_LATENCY_MS).strip()
     try:
         low, _, high = spec.partition("-")
@@ -81,6 +85,8 @@ def _order_number(question: str) -> int | None:
 # ---------------------------------------------------------------------------------------- the "brains"
 def decide_next_step(prompt: str) -> str:
     """The supervisor's choice, read from the filled-in supervisor prompt."""
+    if chaos.active("supervisor_loop"):   # injected problem: it forgets what is already done and re-picks the order agent
+        return "order_agent"
     order_info = _field(prompt, "order info:", "\npolicy info:")
     policy_info = _field(prompt, "policy info:", "\n\nNever pick")
     question = prompt.rsplit("Customer question:", 1)[-1].strip()

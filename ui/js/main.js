@@ -12,6 +12,7 @@ import { NODES } from "./nodes.js";
 import { clip, fill, fmtInt, fmtMs, fmtUsd, h } from "./util.js";
 
 let GRAFANA = "http://localhost:3000";      // replaced by the gateway's /api/config (the port can be changed)
+let chaosLabels = {};                        // scenario name -> label, from /api/config (empty = injecting problems is off)
 let llmMode = null;                          // "mock" or "live"; null = let the server decide
 const VIEWS = { architecture: renderArchitecture, sequence: renderSequence, waterfall: renderWaterfall };
 const $ = (id) => document.getElementById(id);
@@ -113,6 +114,7 @@ function renderAnswer() {
     if (r.visited?.length) parts.push("workers: " + r.visited.join(" → "));
     parts.push("tools: " + (r.tools_used?.length ? r.tools_used.join(", ") : "none"));
     if (r.llm_mode === "mock") parts.push("mock AI: no real model was called");
+    if (r.chaos) parts.push(`injected problem: ${chaosLabels[r.chaos] || r.chaos}`);
     if (r.llm_calls) parts.push(`${r.llm_calls} model calls, ${fmtInt(r.input_tokens + r.output_tokens)} tokens (${fmtInt(r.input_tokens)} in / ${fmtInt(r.output_tokens)} out), est. ${fmtUsd(r.cost_usd)}`);
     if (r.prompt_version) parts.push("prompt version " + r.prompt_version);
     if (r.langsmith_run_id) parts.push("LangSmith run " + r.langsmith_run_id);
@@ -244,7 +246,7 @@ $("ask").addEventListener("submit", async (e) => {
   startLive(requestId);                                   // open the stream FIRST...
   $("go").disabled = true;
   try {
-    const res = await fetch("/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, request_id: requestId, llm_mode: llmMode || undefined }) });
+    const res = await fetch("/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, request_id: requestId, llm_mode: llmMode || undefined, chaos: $("chaos").value || undefined }) });
     if (!res.ok && !model.error) model.error = `The gateway answered ${res.status}`;
   } catch { model.error = "Could not reach the gateway"; }
   finally { $("go").disabled = false; loadHistory(); scheduleRender(); }   // ...then send the request
@@ -296,9 +298,13 @@ async function loadConfig() {
     let saved = null;
     try { saved = localStorage.getItem("shopsense.mode"); } catch { /* ignore */ }
     if (saved === "live" && !cfg.live_available) saved = null;
+    chaosLabels = cfg.chaos_scenarios || {};
+    for (const [name, label] of Object.entries(chaosLabels)) $("chaos").append(h("option", { value: name }, label));
+    $("chaos").classList.toggle("hidden", Object.keys(chaosLabels).length === 0);
     setMode(saved || cfg.default_mode || "mock", false);   // only a click is remembered, not the default
   } catch { llmMode = null; }              // config unavailable: send no choice and let the server decide
 }
+$("chaos").addEventListener("change", (e) => e.target.classList.toggle("on", Boolean(e.target.value)));
 document.querySelectorAll('#mode input').forEach((r) => r.addEventListener("change", () => setMode(r.value, true)));
 
 // ---------------------------------------------------------------------------------------- sample traffic

@@ -18,6 +18,7 @@ setup_telemetry("agents")  # before importing the graph, which creates HTTP clie
 from services.agents import prompts  # noqa: E402
 from services.agents.graph import build_graph, current_model_name  # noqa: E402
 from services.agents.models import default_mode, live_available, live_model_name, llm_mode_var, resolve_mode  # noqa: E402
+from services.common.chaos import install_chaos_middleware  # noqa: E402
 from services.common.events import install_event_middleware, request_id_var  # noqa: E402
 from services.common.metrics import install_metrics, new_usage_tally, record_feedback, request_usage_var  # noqa: E402
 from services.common.telemetry import current_trace_id, set_span_attributes  # noqa: E402
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="agents-service")
 install_event_middleware(app)  # adopt the gateway's X-Request-ID for every event we emit
+install_chaos_middleware(app)  # optional injected problems (off unless CHAOS_ENABLED=1)
 install_metrics(app)
 instrument_app(app)
 graph = build_graph()  # compiled once, reused for every request

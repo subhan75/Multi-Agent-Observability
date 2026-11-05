@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from services.common import chaos
 from services.common.config import service_url
 from services.common.events import REQUEST_ID_HEADER, make_event
 from services.common.metrics import install_metrics
@@ -78,6 +79,8 @@ class Question(BaseModel):
     request_id: str | None = Field(default=None, pattern=r"^[a-z0-9-]{4,40}$")
     # "mock" = the built-in fake model (free, no API key); "live" = real Gemini; omitted = the agents service decides.
     llm_mode: Literal["mock", "live"] | None = None
+    # An injected problem to practise on (see services/common/chaos.py). Ignored unless CHAOS_ENABLED=1.
+    chaos: Literal["slow_llm", "supervisor_loop", "inventory_down"] | None = None
 
 
 @app.post("/support")
@@ -104,6 +107,9 @@ async def _answer_question(body: Question, request_id: str) -> dict:
         headers = {REQUEST_ID_HEADER: request_id}
         if body.llm_mode:
             headers[LLM_MODE_HEADER] = body.llm_mode
+        scenario = chaos.parse(body.chaos)
+        if scenario:
+            headers[chaos.HEADER] = scenario
         resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question}, headers=headers)
         resp.raise_for_status()
     except httpx.HTTPError as exc:
@@ -126,7 +132,7 @@ async def _answer_question(body: Question, request_id: str) -> dict:
                           "visited": result["visited"], "tools_used": result["tools_used"],
                           "llm_calls": result["llm_calls"], "input_tokens": result["input_tokens"],
                           "output_tokens": result["output_tokens"], "cost_usd": result["cost_usd"],
-                          "llm_mode": result.get("llm_mode", "live")}, duration_ms=elapsed))
+                          "llm_mode": result.get("llm_mode", "live"), "chaos": scenario}, duration_ms=elapsed))
     return {"request_id": request_id, "trace_id": trace_id, **result}
 
 
@@ -239,7 +245,8 @@ async def logs_for_trace(trace_id: str = PathParam(pattern=r"^[0-9a-f]{32}$")) -
 @app.get("/api/config")
 async def page_config() -> dict:
     """Settings for the X-ray page: where Grafana is, and whether the real model can be offered (asked of the agents service)."""
-    config = {"grafana_url": os.getenv("GRAFANA_URL", "http://localhost:3000"), "live_available": False, "default_mode": "mock"}
+    config = {"grafana_url": os.getenv("GRAFANA_URL", "http://localhost:3000"), "live_available": False, "default_mode": "mock",
+              "chaos_scenarios": chaos.SCENARIOS if chaos.enabled() else {}}
     try:
         resp = await app.state.http.get(f"{AGENTS_URL}/config", timeout=3)
         resp.raise_for_status()

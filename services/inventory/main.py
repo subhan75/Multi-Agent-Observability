@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from services.common import chaos
+from services.common.chaos import install_chaos_middleware
 from services.common.db import connect
 from services.common.events import emit_event, install_event_middleware
 from services.common.metrics import install_metrics
@@ -33,6 +35,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="inventory-service", lifespan=lifespan)
 install_event_middleware(app, component="inventory", caller="orders")
+install_chaos_middleware(app)  # optional injected problems (off unless CHAOS_ENABLED=1)
 install_metrics(app)
 setup_telemetry("inventory")
 instrument_app(app)
@@ -40,6 +43,9 @@ instrument_app(app)
 
 @app.get("/stock/{sku}", response_model=StockItem)
 def get_stock(sku: str) -> StockItem:
+    if chaos.active("inventory_down"):   # injected problem (see services/common/chaos.py)
+        logger.error("inventory unavailable (injected failure)", extra={"sku": sku})
+        raise HTTPException(status_code=503, detail="Inventory is down (injected problem)")
     with connect(DB) as conn:
         # conn.cursor().execute (not conn.execute): OpenTelemetry only traces queries made through a cursor
         row = conn.cursor().execute("SELECT * FROM stock WHERE sku = ?", (sku,)).fetchone()

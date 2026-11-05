@@ -6,6 +6,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from services.common.chaos import install_chaos_middleware
 from services.common.config import service_url
 from services.common.db import connect
 from services.common.events import current_headers, emit_event, install_event_middleware
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="orders-service", lifespan=lifespan)
 install_event_middleware(app, component="orders", caller="order_agent")
+install_chaos_middleware(app)  # optional injected problems (off unless CHAOS_ENABLED=1)
 install_metrics(app)
 setup_telemetry("orders")
 instrument_app(app)
