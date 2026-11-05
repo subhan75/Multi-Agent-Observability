@@ -74,6 +74,10 @@ def test_bind_tools_is_accepted():
     ("How long does express shipping take?", "(none)", "(none)", "policy_agent"),
     ("How long does express shipping take?", "(none)", "Express: 1-2 days", "writer"),
     ("What is the weather today?", "(none)", "(none)", "writer"),
+    ("Can I return an item 40 days after it was delivered?", "(none)", "(none)", "policy_agent"),   # a number is not an order
+    ("Can I cancel an order after it has shipped?", "(none)", "(none)", "policy_agent"),            # "an order" is not a named order
+    ("Where is my order?", "(none)", "(none)", "writer"),                                          # no number: ask the customer
+    ("Which customer placed order #43?", "(none)", "(none)", "order_agent"),
 ])
 def test_supervisor_rules(question, order_info, policy_info, expected):
     prompt = f"Already gathered:\norder info: {order_info}\npolicy info: {policy_info}\n\nNever pick an agent. Customer question: {question}"
@@ -96,6 +100,7 @@ def test_order_only_question(fake_orders_service):
     final = ask("Is the product in order 43 in stock?")
     assert final["visited"] == ["order_agent", "writer"]
     assert "backordered" in final["answer"]
+    assert "out of stock" in final["answer"]            # zero units says so in words, not just a number
 
 
 def test_policy_only_question(fake_orders_service):

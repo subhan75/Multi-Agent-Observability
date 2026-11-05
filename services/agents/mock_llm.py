@@ -35,7 +35,9 @@ from services.agents import prompts
 from services.common import chaos
 
 DEFAULT_LATENCY_MS = "300-1200"
-_ORDER_WORDS = re.compile(r"\border\b|\bpackage\b|\bparcel\b|\btrack|\bin stock\b|\bstock\b", re.I)
+# A specific order is named: "order 42", "order #42", "order number 42" or just "#42". A bare number ("40 days") or the word
+# "order" alone ("can I cancel an order?") is not enough to look anything up.
+_NAMED_ORDER = re.compile(r"\border\s*(?:number|no\.?|id)?\s*#?\s*\d+|#\d+", re.I)
 _POLICY_WORDS = re.compile(r"return|refund|shipping|cancel|exchange|policy|policies|how long|deliver", re.I)
 _POLICY_PREFIX = prompts.POLICY_AGENT.split("{")[0]
 _WRITER_PREFIX = prompts.WRITER.split("{")[0]
@@ -109,7 +111,7 @@ def decide_next_step(prompt: str) -> str:
     policy_info = _field(prompt, "policy info:", "\n\nNever pick")
     question = prompt.rsplit("Customer question:", 1)[-1].strip()
     order_done, policy_done = order_info not in ("", "(none)"), policy_info not in ("", "(none)")
-    wants_order = bool(_ORDER_WORDS.search(question)) or bool(re.search(r"\d", question))
+    wants_order = bool(_NAMED_ORDER.search(question))
     wants_policy = bool(_POLICY_WORDS.search(question))
     if wants_order and not order_done:
         return "order_agent"
@@ -122,7 +124,7 @@ def _summarise_order(tool_text: str) -> str:
     try:
         order = json.loads(tool_text)
         stock = order.get("in_stock_now")
-        stock_text = f" Stock right now: {stock} units." if stock is not None else ""
+        stock_text = f" Stock right now: {stock} units{' (out of stock)' if stock == 0 else ''}." if stock is not None else ""
         return (f"Order {order['id']} ({order['customer']}): {order['quantity']} x {order['sku']}, "
                 f"status {order['status']}, placed on {order['placed_on']}.{stock_text}")
     except (ValueError, KeyError, TypeError):
