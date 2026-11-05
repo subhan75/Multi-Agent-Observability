@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException, Path as PathParam
+from fastapi import FastAPI, HTTPException, Path as PathParam, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -19,12 +19,14 @@ from services.common.events import REQUEST_ID_HEADER, make_event
 from services.common.metrics import install_metrics
 from services.common.telemetry import current_trace_id, instrument_app, set_span_sink, setup_telemetry, track_request
 from services.gateway.store import EventStore
+from services.gateway.traffic import DEFAULT_COUNT, MAX_COUNT, TrafficRunner
 
 logger = logging.getLogger(__name__)
 
 AGENTS_URL = service_url("AGENTS_URL", 8003)
 LLM_MODE_HEADER = "X-LLM-Mode"
 LOKI_URL = service_url("LOKI_URL", 3100)
+SERVICE_URLS = {"orders": service_url("ORDERS_URL", 8001), "inventory": service_url("INVENTORY_URL", 8002)}
 # Log metadata that is plumbing, not information: hidden from the X-ray page.
 _HIDDEN_LOG_FIELDS = {"code_file_path", "code_function_name", "code_line_number", "flags", "observed_timestamp", "scope_name",
                       "service_instance_id", "severity_number", "severity_text", "telemetry_sdk_language",
@@ -41,7 +43,11 @@ async def lifespan(app: FastAPI):
     global _loop
     _loop = asyncio.get_running_loop()
     app.state.http = httpx.AsyncClient(timeout=120)  # reused for every request (see orders/main.py)
+    # A client that calls THIS app in-process (no network): used by the traffic generator so its requests pass
+    # through the same middleware, spans and metrics as real ones.
+    app.state.self_client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway", timeout=120)
     yield
+    await app.state.self_client.aclose()
     await app.state.http.aclose()
 
 
@@ -50,6 +56,7 @@ install_metrics(app)
 setup_telemetry("gateway")
 instrument_app(app)
 store = EventStore()
+traffic = TrafficRunner()
 
 
 def _span_sink(event: dict) -> None:
@@ -127,6 +134,42 @@ class Feedback(BaseModel):
     request_id: str = Field(pattern=r"^[a-z0-9-]{4,40}$")
     score: int = Field(ge=0, le=1)  # 1 = thumbs up, 0 = thumbs down
     comment: str | None = Field(default=None, max_length=500)
+
+
+class SyntheticQuestion(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+@app.post("/internal/synthetic-question", include_in_schema=False)
+async def synthetic_question(body: SyntheticQuestion) -> dict[str, bool]:
+    """One question for the traffic generator. Always the MOCK model (so it can never spend money), and not recorded
+    as an X-ray request, but it passes through the gateway like a real one (server span, HTTP metrics, logs)."""
+    resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question}, headers={LLM_MODE_HEADER: "mock"})
+    resp.raise_for_status()
+    return {"ok": True}
+
+
+async def _traffic_question(question: str) -> None:
+    resp = await app.state.self_client.post("/internal/synthetic-question", json={"question": question})
+    resp.raise_for_status()
+
+
+async def _traffic_direct_call(service: str, path: str) -> None:
+    await app.state.http.get(f"{SERVICE_URLS[service]}{path}", timeout=10)   # a 404 is an expected, countable answer
+
+
+@app.post("/api/traffic", status_code=202)
+async def start_traffic(count: int = Query(DEFAULT_COUNT, ge=1, le=MAX_COUNT)) -> dict:
+    """Send a batch of mock questions plus some direct lookups, so the Grafana dashboards have data. One batch at a time."""
+    if not traffic.start(count, _traffic_question, _traffic_direct_call):
+        raise HTTPException(status_code=409, detail="A traffic batch is already running")
+    logger.info("synthetic traffic started", extra={"count": count})
+    return traffic.status()
+
+
+@app.get("/api/traffic")
+async def traffic_status() -> dict:
+    return traffic.status()
 
 
 @app.post("/feedback")

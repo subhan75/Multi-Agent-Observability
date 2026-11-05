@@ -70,9 +70,9 @@ USER_FEEDBACK = _meter.create_counter(
 TOOL_CALLS = _meter.create_counter(
     "agent_tool_calls", unit="{call}", description="Tool calls made by agents")
 
-# Paths we do not measure: our own event plumbing and the long-lived SSE streams (their "duration"
-# is meaningless and they would pin the in-flight gauge).
-_SKIPPED_PREFIXES = ("/internal/events", "/events/")
+# Paths we do not measure: our own event plumbing, the long-lived SSE streams (their "duration"
+# is meaningless and they would pin the in-flight gauge) and the X-ray page's traffic-button polling.
+_SKIPPED_PREFIXES = ("/internal/events", "/events/", "/api/traffic")
 
 
 def _route_template(request: Request) -> str:

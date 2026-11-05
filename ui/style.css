@@ -56,6 +56,9 @@ form input[type=text] { flex: 1 1 340px; padding: 9px 12px; border: 1px solid va
 .mode label:has(input:checked) { background: var(--accent); color: #fff; }
 .mode label:has(input:disabled) { opacity: .45; cursor: not-allowed; }
 .mode label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.chips-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+.traffic { display: flex; gap: 8px; align-items: center; font-size: 12px; }
+.traffic a { color: var(--accent); }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .chip { font-size: 12px; padding: 3px 10px; border-radius: 99px; background: var(--accent-soft); color: var(--accent); border: 0; }
 

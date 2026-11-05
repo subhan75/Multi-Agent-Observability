@@ -301,6 +301,35 @@ async function loadConfig() {
 }
 document.querySelectorAll('#mode input').forEach((r) => r.addEventListener("change", () => setMode(r.value, true)));
 
+// ---------------------------------------------------------------------------------------- sample traffic
+const TRAFFIC_COUNT = 12;
+let trafficTimer = null;
+
+function stopTrafficPolling() { clearInterval(trafficTimer); trafficTimer = null; $("traffic").disabled = false; }
+
+async function pollTraffic() {
+  try {
+    const s = await (await fetch("/api/traffic")).json();
+    if (s.running) { $("traffic").disabled = true; $("traffic-msg").textContent = `${s.done} of ${s.total} questions sent…`; return; }
+    stopTrafficPolling();
+    if (!s.total) { $("traffic-msg").textContent = ""; return; }
+    $("traffic-msg").replaceChildren(`Done: ${s.total - s.failed} of ${s.total} ok. Give Grafana ~15 s, then `,
+      h("a", { href: `${GRAFANA}/d/shopsense-services`, target: "_blank", rel: "noopener" }, "open the dashboards ↗"));
+  } catch { stopTrafficPolling(); $("traffic-msg").textContent = "Could not read the traffic status"; }
+}
+
+$("traffic").addEventListener("click", async () => {
+  $("traffic").disabled = true;
+  $("traffic-msg").textContent = "Starting…";
+  try {
+    const res = await fetch(`/api/traffic?count=${TRAFFIC_COUNT}`, { method: "POST" });
+    if (!res.ok && res.status !== 409) throw new Error(`HTTP ${res.status}`);   // 409 = a batch is already running: just follow it
+  } catch { stopTrafficPolling(); $("traffic-msg").textContent = "Could not start the traffic batch"; return; }
+  trafficTimer = setInterval(pollTraffic, 1500);
+  pollTraffic();
+});
+
 loadConfig();
 loadHistory();
 scheduleRender();
+fetch("/api/traffic").then((r) => r.json()).then((s) => { if (s.running) { trafficTimer = setInterval(pollTraffic, 1500); pollTraffic(); } }).catch(() => {});  // a batch started before a page refresh
