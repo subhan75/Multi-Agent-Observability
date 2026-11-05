@@ -10,7 +10,103 @@
 # Every published port is bound to 127.0.0.1, so these tools are reachable only from THIS computer,
 # not from other machines on your network. (Grafana below allows anonymous admin access for the lab,
 # which would be unsafe if it were exposed.)
+#
+# LEARNER EDITION: the four Python services can also run in Docker, so nothing needs installing except
+# Docker itself (works the same on Windows, macOS and Linux). They live in the "app" profile, which means
+# a plain `docker compose up -d` still starts ONLY the observability stack, exactly as before.
+#   Everything:   python run.py up        (or: docker compose --profile app up --build -d --wait)
+#   Stop + clean: python run.py down      (or: docker compose --profile app down --remove-orphans --volumes)
+name: shopsense   # pinned so volume and network names do not depend on the folder name
+
+# Settings shared by the four Python services.
+x-python-service: &python-service
+  build: .
+  image: shopsense-app:local
+  restart: "no"
+  profiles: ["app"]
+  environment: &python-env
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    GATEWAY_URL: http://gateway:8000
+    ORDERS_URL: http://orders:8001
+    INVENTORY_URL: http://inventory:8002
+    AGENTS_URL: http://agents:8003
+    LOKI_URL: http://loki:3100
+
 services:
+  inventory:
+    <<: *python-service
+    container_name: shopsense-inventory
+    command: ["python", "-m", "uvicorn", "services.inventory.main:app", "--host", "0.0.0.0", "--port", "8002"]
+    ports:
+      - "127.0.0.1:${INVENTORY_PORT:-8002}:8002"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    depends_on:
+      - otel-collector
+
+  orders:
+    <<: *python-service
+    container_name: shopsense-orders
+    command: ["python", "-m", "uvicorn", "services.orders.main:app", "--host", "0.0.0.0", "--port", "8001"]
+    ports:
+      - "127.0.0.1:${ORDERS_PORT:-8001}:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    depends_on:
+      inventory:
+        condition: service_healthy
+
+  agents:
+    <<: *python-service
+    container_name: shopsense-agents
+    command: ["python", "-m", "uvicorn", "services.agents.main:app", "--host", "0.0.0.0", "--port", "8003"]
+    environment:
+      <<: *python-env
+      # Passed through from your shell or from .env (docker compose reads .env next to this file for ${...}).
+      # Nothing is baked into the image. Leave the key empty to use the built-in mock model only.
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-shopsense}
+    ports:
+      - "127.0.0.1:${AGENTS_PORT:-8003}:8003"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s     # importing LangChain + LangGraph takes a while
+    depends_on:
+      orders:
+        condition: service_healthy
+
+  gateway:
+    <<: *python-service
+    container_name: shopsense-gateway
+    command: ["python", "-m", "uvicorn", "services.gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    depends_on:
+      agents:
+        condition: service_healthy
+      loki:
+        condition: service_started
+
   prometheus:
     image: prom/prometheus:v3.5.0
     container_name: shopsense-prometheus
@@ -75,7 +171,7 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"   # port 3000 is often taken on Macs: set GRAFANA_PORT to change it
     volumes:
       - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro   # dashboard JSON files
