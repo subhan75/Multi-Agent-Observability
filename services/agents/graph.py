@@ -21,7 +21,8 @@ from pydantic import BaseModel
 
 from services.agents import prompts
 from services.agents.callbacks import AgentLLMRecorder
-from services.agents.models import current_model_name
+from services.agents.mock_llm import MockChatModel
+from services.agents.models import current_mode, current_model_name
 from services.agents.rag import retrieve
 from services.agents.tools import get_order
 from services.common.events import emit_event, step
@@ -52,7 +53,10 @@ class Decision(BaseModel):
 
 
 
-def _llm() -> ChatGoogleGenerativeAI:
+def _llm():
+    """The chat model for THIS request: the built-in mock, or real Gemini (see models.py for how it is chosen)."""
+    if current_mode() == "mock":
+        return MockChatModel()
     return ChatGoogleGenerativeAI(model=current_model_name(), temperature=0)
 
 
@@ -68,7 +72,7 @@ def _ask(parent: str, prompt: str, schema: type[BaseModel] | None = None):
     # "semantic conventions" for AI calls, so any tool that understands them can read these spans.
     with get_tracer().start_as_current_span("gemini.generate") as span:
         span.set_attribute("gen_ai.operation.name", "chat")
-        span.set_attribute("gen_ai.provider.name", "gcp.gemini")
+        span.set_attribute("gen_ai.provider.name", "mock" if current_mode() == "mock" else "gcp.gemini")
         span.set_attribute("gen_ai.request.model", model)
         span.set_attribute("gen_ai.request.temperature", 0)
         span.set_attribute("shopsense.agent", parent)

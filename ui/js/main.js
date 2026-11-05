@@ -11,7 +11,8 @@ import { stateAt } from "./time.js";
 import { NODES } from "./nodes.js";
 import { clip, fill, fmtInt, fmtMs, fmtUsd, h } from "./util.js";
 
-const GRAFANA = "http://localhost:3000";
+let GRAFANA = "http://localhost:3000";      // replaced by the gateway's /api/config (the port can be changed)
+let llmMode = null;                          // "mock" or "live"; null = let the server decide
 const VIEWS = { architecture: renderArchitecture, sequence: renderSequence, waterfall: renderWaterfall };
 const $ = (id) => document.getElementById(id);
 
@@ -111,6 +112,7 @@ function renderAnswer() {
   if (r) {
     if (r.visited?.length) parts.push("workers: " + r.visited.join(" → "));
     parts.push("tools: " + (r.tools_used?.length ? r.tools_used.join(", ") : "none"));
+    if (r.llm_mode === "mock") parts.push("mock AI: no real model was called");
     if (r.llm_calls) parts.push(`${r.llm_calls} model calls, ${fmtInt(r.input_tokens + r.output_tokens)} tokens (${fmtInt(r.input_tokens)} in / ${fmtInt(r.output_tokens)} out), est. ${fmtUsd(r.cost_usd)}`);
     if (r.prompt_version) parts.push("prompt version " + r.prompt_version);
     if (r.langsmith_run_id) parts.push("LangSmith run " + r.langsmith_run_id);
@@ -242,7 +244,7 @@ $("ask").addEventListener("submit", async (e) => {
   startLive(requestId);                                   // open the stream FIRST...
   $("go").disabled = true;
   try {
-    const res = await fetch("/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, request_id: requestId }) });
+    const res = await fetch("/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, request_id: requestId, llm_mode: llmMode || undefined }) });
     if (!res.ok && !model.error) model.error = `The gateway answered ${res.status}`;
   } catch { model.error = "Could not reach the gateway"; }
   finally { $("go").disabled = false; loadHistory(); scheduleRender(); }   // ...then send the request
@@ -276,5 +278,29 @@ $("stage").addEventListener("keydown", (e) => {
 });
 window.addEventListener("resize", scheduleRender);
 
+// ---------------------------------------------------------------------------------------- mock / live switch
+function setMode(mode, remember) {
+  llmMode = mode;
+  document.querySelectorAll('#mode input').forEach((r) => { r.checked = r.value === mode; });
+  if (remember) { try { localStorage.setItem("shopsense.mode", mode); } catch { /* private browsing: just don't remember it */ } }
+}
+
+async function loadConfig() {
+  try {
+    const cfg = await (await fetch("/api/config")).json();
+    GRAFANA = cfg.grafana_url || GRAFANA;
+    const live = document.querySelector('#mode input[value="live"]');
+    live.disabled = !cfg.live_available;
+    $("mode-live").title = cfg.live_available ? `Calls the real ${cfg.live_model || "Gemini"} model (costs a little per question)`
+      : "Not available: add GOOGLE_API_KEY to the .env file and restart to turn this on";
+    let saved = null;
+    try { saved = localStorage.getItem("shopsense.mode"); } catch { /* ignore */ }
+    if (saved === "live" && !cfg.live_available) saved = null;
+    setMode(saved || cfg.default_mode || "mock", false);   // only a click is remembered, not the default
+  } catch { llmMode = null; }              // config unavailable: send no choice and let the server decide
+}
+document.querySelectorAll('#mode input').forEach((r) => r.addEventListener("change", () => setMode(r.value, true)));
+
+loadConfig();
 loadHistory();
 scheduleRender();

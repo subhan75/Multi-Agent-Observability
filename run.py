@@ -71,8 +71,14 @@ def published_ports(config: dict) -> dict[int, str]:
 
 
 def host_ports_in_ps(ps_output: str) -> set[int]:
-    """Host ports out of `docker ps --format {{.Ports}}` text such as '127.0.0.1:8000->8000/tcp, ...'."""
-    return {int(match) for match in re.findall(r":(\d+)->", ps_output)}
+    """Host ports out of `docker ps --format {{.Ports}}` text such as '127.0.0.1:8000->8000/tcp, 127.0.0.1:4317-4318->4317-4318/tcp'.
+
+    Docker prints neighbouring ports as a range, so '4317-4318' means both 4317 and 4318.
+    """
+    ports: set[int] = set()
+    for first, last in re.findall(r":(\d+)(?:-(\d+))?->", ps_output):
+        ports.update(range(int(first), int(last or first) + 1))
+    return ports
 
 
 def project_container_ids() -> list[str]:

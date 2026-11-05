@@ -1,10 +1,12 @@
 """Gateway: public entry point (port 8000), event hub, and host of the X-ray UI."""
 import asyncio
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException, Path as PathParam
@@ -21,6 +23,7 @@ from services.gateway.store import EventStore
 logger = logging.getLogger(__name__)
 
 AGENTS_URL = service_url("AGENTS_URL", 8003)
+LLM_MODE_HEADER = "X-LLM-Mode"
 LOKI_URL = service_url("LOKI_URL", 3100)
 # Log metadata that is plumbing, not information: hidden from the X-ray page.
 _HIDDEN_LOG_FIELDS = {"code_file_path", "code_function_name", "code_line_number", "flags", "observed_timestamp", "scope_name",
@@ -66,6 +69,8 @@ class Question(BaseModel):
     question: str = Field(min_length=3, max_length=500)
     # The browser may pick the id first so it can open the live stream before asking.
     request_id: str | None = Field(default=None, pattern=r"^[a-z0-9-]{4,40}$")
+    # "mock" = the built-in fake model (free, no API key); "live" = real Gemini; omitted = the agents service decides.
+    llm_mode: Literal["mock", "live"] | None = None
 
 
 @app.post("/support")
@@ -89,8 +94,10 @@ async def _answer_question(body: Question, request_id: str) -> dict:
                          {"question": body.question, "summary": body.question, "trace_id": trace_id},
                          caller="user", span_id=span_id))
     try:
-        resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question},
-                                         headers={REQUEST_ID_HEADER: request_id})
+        headers = {REQUEST_ID_HEADER: request_id}
+        if body.llm_mode:
+            headers[LLM_MODE_HEADER] = body.llm_mode
+        resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question}, headers=headers)
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         elapsed = (time.perf_counter() - started) * 1000
@@ -111,7 +118,8 @@ async def _answer_question(body: Question, request_id: str) -> dict:
                           "langsmith_run_id": result["run_id"], "prompt_version": result["prompt_version"],
                           "visited": result["visited"], "tools_used": result["tools_used"],
                           "llm_calls": result["llm_calls"], "input_tokens": result["input_tokens"],
-                          "output_tokens": result["output_tokens"], "cost_usd": result["cost_usd"]}, duration_ms=elapsed))
+                          "output_tokens": result["output_tokens"], "cost_usd": result["cost_usd"],
+                          "llm_mode": result.get("llm_mode", "live")}, duration_ms=elapsed))
     return {"request_id": request_id, "trace_id": trace_id, **result}
 
 
@@ -183,6 +191,19 @@ async def logs_for_trace(trace_id: str = PathParam(pattern=r"^[0-9a-f]{32}$")) -
                          "fields": {k: v for k, v in meta.items() if k not in _HIDDEN_LOG_FIELDS}})
     logs.sort(key=lambda entry: entry["ts"])
     return {"available": True, "logs": logs}
+
+
+@app.get("/api/config")
+async def page_config() -> dict:
+    """Settings for the X-ray page: where Grafana is, and whether the real model can be offered (asked of the agents service)."""
+    config = {"grafana_url": os.getenv("GRAFANA_URL", "http://localhost:3000"), "live_available": False, "default_mode": "mock"}
+    try:
+        resp = await app.state.http.get(f"{AGENTS_URL}/config", timeout=3)
+        resp.raise_for_status()
+        config.update(resp.json())
+    except (httpx.HTTPError, ValueError):
+        pass  # agents not reachable: the page still works, offering the mock only
+    return config
 
 
 @app.get("/requests")

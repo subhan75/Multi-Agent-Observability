@@ -74,6 +74,8 @@ services:
       # Nothing is baked into the image. Leave the key empty to use the built-in mock model only.
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-}
+      LLM_MODE: ${LLM_MODE:-}                    # force "mock" or "live" (default: live if a key is set, else mock)
+      MOCK_LLM_LATENCY_MS: ${MOCK_LLM_LATENCY_MS:-300-1200}
       LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
       LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
       LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-shopsense}
@@ -93,6 +95,9 @@ services:
     <<: *python-service
     container_name: shopsense-gateway
     command: ["python", "-m", "uvicorn", "services.gateway.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    environment:
+      <<: *python-env
+      GRAFANA_URL: http://localhost:${GRAFANA_PORT:-3000}   # the link the X-ray page shows (opened in YOUR browser, so localhost)
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8000}:8000"
     healthcheck:

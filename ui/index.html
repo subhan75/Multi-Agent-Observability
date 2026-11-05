@@ -15,6 +15,10 @@
   <form id="ask">
     <input id="q" type="text" placeholder="Ask a support question…" value="Where is order 42, and can I return it?" autocomplete="off" aria-label="Your question">
     <button class="btn primary" id="go" type="submit">Send</button>
+    <div class="mode" id="mode" role="radiogroup" aria-label="Which AI answers">
+      <label id="mode-mock" title="A built-in stand-in for the AI: free and needs no API key. Everything else (the services, database, traces, metrics and logs) is real."><input type="radio" name="llm-mode" value="mock" checked> Mock AI</label>
+      <label id="mode-live" title="Calls the real Gemini model"><input type="radio" name="llm-mode" value="live"> Live Gemini</label>
+    </div>
     <select id="history-select" class="btn" aria-label="Replay a past request" title="Replay a past request"><option value="">Past requests…</option></select>
   </form>
   <div class="chips" id="chips"></div>

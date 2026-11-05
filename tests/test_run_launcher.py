@@ -22,6 +22,11 @@ def test_host_ports_in_ps_parses_docker_output():
     assert run.host_ports_in_ps(text) == {8000, 9090, 3100}
 
 
+def test_host_ports_in_ps_expands_ranges():
+    # docker prints neighbouring ports as a range; this exact text was seen in a real run
+    assert run.host_ports_in_ps("127.0.0.1:4317-4318->4317-4318/tcp, 127.0.0.1:8889->8889/tcp") == {4317, 4318, 8889}
+
+
 def test_port_in_use_detects_a_listening_socket():
     with socket.socket() as server:
         server.bind(("127.0.0.1", 0))
