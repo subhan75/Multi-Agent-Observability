@@ -19,6 +19,10 @@ export function describe(span) {
   }
   if (r && span.kind === "CLIENT" && r.to === "gemini") {
     const agent = label(r.from);
+    if (a["gen_ai.provider.name"] === "mock") {
+      return { title: `${agent} → AI model (mock): ${r.label}`,
+        plain: "The built-in stand-in for the AI. It makes no network call, but it is recorded exactly like the real request would be: the prompt goes in, a reply comes out, and tokens, time and estimated cost are counted. Switch to Live Gemini (if you have a key) to compare." };
+    }
     return { title: `${agent} → Gemini API: ${r.label}`,
       plain: `The real network request to Google's servers: the prompt goes out over HTTPS and the model's reply comes back. Almost all of a question's waiting time is spent here, because the model "thinks" before answering.` };
   }

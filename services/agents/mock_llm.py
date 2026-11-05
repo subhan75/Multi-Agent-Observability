@@ -21,12 +21,15 @@ import random
 import re
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 from langchain_core.runnables import RunnableLambda
+from opentelemetry import trace
 
 from services.agents import prompts
 from services.common import chaos
@@ -52,6 +55,21 @@ def _pause() -> None:
         low_ms, high_ms = 300.0, 1200.0
     if high_ms > 0:
         time.sleep(random.uniform(min(low_ms, high_ms), max(low_ms, high_ms)) / 1000)
+
+
+@contextmanager
+def _model_call_span() -> Iterator[None]:
+    """Record the "request to the model" as an OpenTelemetry CLIENT span, just like the real HTTP call to Gemini would be.
+
+    The mock makes no network call, so this span is the only trace of it. It is clearly marked as a mock
+    (`gen_ai.provider.name = "mock"` and a `mock://` address), so nobody mistakes it for a call to Google. It gives
+    the X-ray page and Tempo the same "model call" step that real Gemini calls produce, which is where you open the
+    prompt, the reply and the token counts.
+    """
+    attributes = {"http.method": "POST", "http.url": "mock://mock-llm/generateContent", "peer.service": "mock-llm",
+                  "gen_ai.provider.name": "mock", "gen_ai.request.model": "mock-llm"}
+    with trace.get_tracer("shopsense").start_as_current_span("POST mock-llm", kind=trace.SpanKind.CLIENT, attributes=attributes):
+        yield
 
 
 def _tokens(text: str) -> int:
@@ -149,7 +167,11 @@ class MockChatModel(BaseChatModel):
                          response_metadata={"model_name": "mock-llm"})
 
     def _generate(self, messages: list[BaseMessage], stop: list[str] | None = None, run_manager: Any = None, **kwargs: Any) -> ChatResult:
-        _pause()
+        with _model_call_span():
+            _pause()
+            return self._answer(messages)
+
+    def _answer(self, messages: list[BaseMessage]) -> ChatResult:
         prompt = _text_of(messages)
         last = messages[-1]
         if isinstance(last, ToolMessage):                      # the order agent's tool just answered
@@ -174,7 +196,8 @@ class MockChatModel(BaseChatModel):
         """Only the supervisor's `Decision` schema is needed: it has a single `next_step` field."""
 
         def run(value: Any) -> Any:
-            _pause()
+            with _model_call_span():
+                _pause()
             prompt = _text_of(value)
             parsed = schema(next_step=decide_next_step(prompt))
             if not include_raw:

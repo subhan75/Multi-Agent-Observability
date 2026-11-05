@@ -128,3 +128,31 @@ def test_tokens_and_cost_are_counted_per_question(fake_orders_service):
     assert tally["input_tokens"] > 0 and tally["output_tokens"] > 0
     assert tally["cost_usd"] > 0
     assert cost_usd("mock-llm", 1_000_000, 0) == pytest.approx(0.10)
+
+
+# ---------------------------------------------------------------------------------------- the X-ray needs a "model call" step
+def test_every_mock_generation_is_recorded_as_a_marked_client_span(monkeypatch):
+    """The X-ray page draws a model call from a CLIENT span; without it a mock request would have no prompt/reply step."""
+    from types import SimpleNamespace
+    from contextlib import contextmanager
+    from opentelemetry import trace
+    from services.agents import mock_llm
+
+    recorded = []
+
+    class FakeTracer:
+        @contextmanager
+        def start_as_current_span(self, name, kind=None, attributes=None):
+            recorded.append({"name": name, "kind": kind, "attributes": attributes})
+            yield
+
+    monkeypatch.setattr(mock_llm, "trace", SimpleNamespace(get_tracer=lambda _: FakeTracer(), SpanKind=trace.SpanKind))
+    MockChatModel().invoke("Question: hi\nOrder info: (not looked up)\nPolicy info: (not looked up)")
+    from services.agents.graph import Decision
+    MockChatModel().with_structured_output(Decision, include_raw=True).invoke("order info: (none)\npolicy info: (none)\n\nNever pick x. Customer question: hi")
+
+    assert len(recorded) == 2                                   # one per generation, plain and structured
+    for span in recorded:
+        assert span["kind"] == trace.SpanKind.CLIENT
+        assert span["attributes"]["gen_ai.provider.name"] == "mock"
+        assert span["attributes"]["http.url"].startswith("mock://")   # never mistaken for a call to Google

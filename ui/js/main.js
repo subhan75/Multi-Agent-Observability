@@ -33,7 +33,14 @@ function bounds() {
   return { t0, tEnd };
 }
 
+/** The model's box says what really answered: Google's Gemini, or the built-in mock (which makes no network call). */
+function syncModelLabel() {
+  NODES.gemini.label = model.isMock ? "AI model (mock)" : "Gemini API";
+  NODES.gemini.sub = model.isMock ? "built-in stand-in · no network" : "Google · over the internet";
+}
+
 function render() {
+  syncModelLabel();
   const hasData = model.derived().spans.length > 0;
   $("stage").classList.toggle("hidden", false);
   if (!hasData) {
