@@ -21,6 +21,7 @@ export class TraceModel {
     this.details = new Map();        // span id -> [detail events]
     this.requestId = null;
     this.traceId = null;
+    this.isMock = false;             // true once a span says the built-in mock model answered (no call to Google)
     this.question = "";
     this.result = null;              // the request_done payload (answer, tokens, cost, run id ...)
     this.error = null;
@@ -57,6 +58,7 @@ export class TraceModel {
     span.kind = p.span_kind;
     span.start = p.start_ns / 1e9;
     span.attrs = { ...span.attrs, ...p.attrs };
+    if (span.attrs["gen_ai.provider.name"] === "mock") this.isMock = true;
     if (ev.kind === "span_end") {
       span.end = p.end_ns / 1e9;
       span.status = p.status === "ERROR" ? "ERROR" : "OK";

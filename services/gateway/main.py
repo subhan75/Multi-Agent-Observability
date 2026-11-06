@@ -1,27 +1,33 @@
 """Gateway: public entry point (port 8000), event hub, and host of the X-ray UI."""
 import asyncio
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException, Path as PathParam
+from fastapi import FastAPI, HTTPException, Path as PathParam, Query
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from services.common import chaos
 from services.common.config import service_url
 from services.common.events import REQUEST_ID_HEADER, make_event
 from services.common.metrics import install_metrics
 from services.common.telemetry import current_trace_id, instrument_app, set_span_sink, setup_telemetry, track_request
 from services.gateway.store import EventStore
+from services.gateway.traffic import DEFAULT_COUNT, MAX_COUNT, TrafficRunner
 
 logger = logging.getLogger(__name__)
 
 AGENTS_URL = service_url("AGENTS_URL", 8003)
+LLM_MODE_HEADER = "X-LLM-Mode"
 LOKI_URL = service_url("LOKI_URL", 3100)
+SERVICE_URLS = {"orders": service_url("ORDERS_URL", 8001), "inventory": service_url("INVENTORY_URL", 8002)}
 # Log metadata that is plumbing, not information: hidden from the X-ray page.
 _HIDDEN_LOG_FIELDS = {"code_file_path", "code_function_name", "code_line_number", "flags", "observed_timestamp", "scope_name",
                       "service_instance_id", "severity_number", "severity_text", "telemetry_sdk_language",
@@ -38,7 +44,11 @@ async def lifespan(app: FastAPI):
     global _loop
     _loop = asyncio.get_running_loop()
     app.state.http = httpx.AsyncClient(timeout=120)  # reused for every request (see orders/main.py)
+    # A client that calls THIS app in-process (no network): used by the traffic generator so its requests pass
+    # through the same middleware, spans and metrics as real ones.
+    app.state.self_client = httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://gateway", timeout=120)
     yield
+    await app.state.self_client.aclose()
     await app.state.http.aclose()
 
 
@@ -47,6 +57,7 @@ install_metrics(app)
 setup_telemetry("gateway")
 instrument_app(app)
 store = EventStore()
+traffic = TrafficRunner()
 
 
 def _span_sink(event: dict) -> None:
@@ -66,6 +77,10 @@ class Question(BaseModel):
     question: str = Field(min_length=3, max_length=500)
     # The browser may pick the id first so it can open the live stream before asking.
     request_id: str | None = Field(default=None, pattern=r"^[a-z0-9-]{4,40}$")
+    # "mock" = the built-in fake model (free, no API key); "live" = real Gemini; omitted = the agents service decides.
+    llm_mode: Literal["mock", "live"] | None = None
+    # An injected problem to practise on (see services/common/chaos.py). Ignored unless CHAOS_ENABLED=1.
+    chaos: Literal["slow_llm", "supervisor_loop", "inventory_down"] | None = None
 
 
 @app.post("/support")
@@ -89,8 +104,13 @@ async def _answer_question(body: Question, request_id: str) -> dict:
                          {"question": body.question, "summary": body.question, "trace_id": trace_id},
                          caller="user", span_id=span_id))
     try:
-        resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question},
-                                         headers={REQUEST_ID_HEADER: request_id})
+        headers = {REQUEST_ID_HEADER: request_id}
+        if body.llm_mode:
+            headers[LLM_MODE_HEADER] = body.llm_mode
+        scenario = chaos.parse(body.chaos)
+        if scenario:
+            headers[chaos.HEADER] = scenario
+        resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question}, headers=headers)
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         elapsed = (time.perf_counter() - started) * 1000
@@ -111,7 +131,8 @@ async def _answer_question(body: Question, request_id: str) -> dict:
                           "langsmith_run_id": result["run_id"], "prompt_version": result["prompt_version"],
                           "visited": result["visited"], "tools_used": result["tools_used"],
                           "llm_calls": result["llm_calls"], "input_tokens": result["input_tokens"],
-                          "output_tokens": result["output_tokens"], "cost_usd": result["cost_usd"]}, duration_ms=elapsed))
+                          "output_tokens": result["output_tokens"], "cost_usd": result["cost_usd"],
+                          "llm_mode": result.get("llm_mode", "live"), "chaos": scenario}, duration_ms=elapsed))
     return {"request_id": request_id, "trace_id": trace_id, **result}
 
 
@@ -119,6 +140,42 @@ class Feedback(BaseModel):
     request_id: str = Field(pattern=r"^[a-z0-9-]{4,40}$")
     score: int = Field(ge=0, le=1)  # 1 = thumbs up, 0 = thumbs down
     comment: str | None = Field(default=None, max_length=500)
+
+
+class SyntheticQuestion(BaseModel):
+    question: str = Field(min_length=3, max_length=500)
+
+
+@app.post("/internal/synthetic-question", include_in_schema=False)
+async def synthetic_question(body: SyntheticQuestion) -> dict[str, bool]:
+    """One question for the traffic generator. Always the MOCK model (so it can never spend money), and not recorded
+    as an X-ray request, but it passes through the gateway like a real one (server span, HTTP metrics, logs)."""
+    resp = await app.state.http.post(f"{AGENTS_URL}/ask", json={"question": body.question}, headers={LLM_MODE_HEADER: "mock"})
+    resp.raise_for_status()
+    return {"ok": True}
+
+
+async def _traffic_question(question: str) -> None:
+    resp = await app.state.self_client.post("/internal/synthetic-question", json={"question": question})
+    resp.raise_for_status()
+
+
+async def _traffic_direct_call(service: str, path: str) -> None:
+    await app.state.http.get(f"{SERVICE_URLS[service]}{path}", timeout=10)   # a 404 is an expected, countable answer
+
+
+@app.post("/api/traffic", status_code=202)
+async def start_traffic(count: int = Query(DEFAULT_COUNT, ge=1, le=MAX_COUNT)) -> dict:
+    """Send a batch of mock questions plus some direct lookups, so the Grafana dashboards have data. One batch at a time."""
+    if not traffic.start(count, _traffic_question, _traffic_direct_call):
+        raise HTTPException(status_code=409, detail="A traffic batch is already running")
+    logger.info("synthetic traffic started", extra={"count": count})
+    return traffic.status()
+
+
+@app.get("/api/traffic")
+async def traffic_status() -> dict:
+    return traffic.status()
 
 
 @app.post("/feedback")
@@ -183,6 +240,20 @@ async def logs_for_trace(trace_id: str = PathParam(pattern=r"^[0-9a-f]{32}$")) -
                          "fields": {k: v for k, v in meta.items() if k not in _HIDDEN_LOG_FIELDS}})
     logs.sort(key=lambda entry: entry["ts"])
     return {"available": True, "logs": logs}
+
+
+@app.get("/api/config")
+async def page_config() -> dict:
+    """Settings for the X-ray page: where Grafana is, and whether the real model can be offered (asked of the agents service)."""
+    config = {"grafana_url": os.getenv("GRAFANA_URL", "http://localhost:3000"), "live_available": False, "default_mode": "mock",
+              "chaos_scenarios": chaos.SCENARIOS if chaos.enabled() else {}}
+    try:
+        resp = await app.state.http.get(f"{AGENTS_URL}/config", timeout=3)
+        resp.raise_for_status()
+        config.update(resp.json())
+    except (httpx.HTTPError, ValueError):
+        pass  # agents not reachable: the page still works, offering the mock only
+    return config
 
 
 @app.get("/requests")

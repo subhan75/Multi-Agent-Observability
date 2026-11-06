@@ -1,0 +1,22 @@
+# Keeps the image small and, more importantly, keeps secrets and personal files OUT of it.
+.env
+.env.*
+!.env.example
+.git
+.gitignore
+.venv
+venv
+data
+docs
+notes
+*.db
+__pycache__
+*.pyc
+.pytest_cache
+tests
+infra
+node_modules
+.vscode
+.idea
+.claude
+CLAUDE.md

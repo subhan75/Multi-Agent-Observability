@@ -46,7 +46,7 @@ DEFAULT_ENDPOINT = "http://127.0.0.1:4318"
 
 # URLs we never trace: health checks, Prometheus scraping, our own event plumbing and the
 # long-lived live streams. (Comma-separated regular expressions.)
-EXCLUDED_URLS = "health,metrics,internal/events,events/,api/logs"
+EXCLUDED_URLS = "health,metrics,internal/events,events/,api/logs,api/traffic"
 
 _configured = False
 

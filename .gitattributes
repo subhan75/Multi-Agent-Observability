@@ -1,0 +1,18 @@
+# Same line endings on Windows and macOS/Linux. Without this, a file saved with Windows line endings
+# can break inside a Linux container or when a Mac user clones the repo.
+* text=auto
+*.py        text eol=lf
+*.js        text eol=lf
+*.css       text eol=lf
+*.html      text eol=lf
+*.json      text eol=lf
+*.yml       text eol=lf
+*.yaml      text eol=lf
+*.md        text eol=lf
+*.txt       text eol=lf
+Dockerfile  text eol=lf
+.dockerignore text eol=lf
+# Windows-only launchers keep Windows line endings.
+*.cmd       text eol=crlf
+*.ps1       text eol=crlf
+*.png       binary

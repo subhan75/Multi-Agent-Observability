@@ -3,6 +3,7 @@
 NOTE: the order agent's tool calls the orders service over HTTP, so the orders and inventory services
 must be running (scripts/run_all.ps1) while you evaluate. Gemini is called for real, so a run costs
 a few API calls per question.
+(No API key? Run with LLM_MODE=mock to use the built-in fake model instead: free, and good for checking the setup.)
 """
 from dotenv import load_dotenv
 

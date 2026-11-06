@@ -11,7 +11,9 @@ import { stateAt } from "./time.js";
 import { NODES } from "./nodes.js";
 import { clip, fill, fmtInt, fmtMs, fmtUsd, h } from "./util.js";
 
-const GRAFANA = "http://localhost:3000";
+let GRAFANA = "http://localhost:3000";      // replaced by the gateway's /api/config (the port can be changed)
+let chaosLabels = {};                        // scenario name -> label, from /api/config (empty = injecting problems is off)
+let llmMode = null;                          // "mock" or "live"; null = let the server decide
 const VIEWS = { architecture: renderArchitecture, sequence: renderSequence, waterfall: renderWaterfall };
 const $ = (id) => document.getElementById(id);
 
@@ -31,7 +33,14 @@ function bounds() {
   return { t0, tEnd };
 }
 
+/** The model's box says what really answered: Google's Gemini, or the built-in mock (which makes no network call). */
+function syncModelLabel() {
+  NODES.gemini.label = model.isMock ? "AI model (mock)" : "Gemini API";
+  NODES.gemini.sub = model.isMock ? "built-in stand-in · no network" : "Google · over the internet";
+}
+
 function render() {
+  syncModelLabel();
   const hasData = model.derived().spans.length > 0;
   $("stage").classList.toggle("hidden", false);
   if (!hasData) {
@@ -111,6 +120,8 @@ function renderAnswer() {
   if (r) {
     if (r.visited?.length) parts.push("workers: " + r.visited.join(" → "));
     parts.push("tools: " + (r.tools_used?.length ? r.tools_used.join(", ") : "none"));
+    if (r.llm_mode === "mock") parts.push("mock AI: no real model was called");
+    if (r.chaos) parts.push(`injected problem: ${chaosLabels[r.chaos] || r.chaos}`);
     if (r.llm_calls) parts.push(`${r.llm_calls} model calls, ${fmtInt(r.input_tokens + r.output_tokens)} tokens (${fmtInt(r.input_tokens)} in / ${fmtInt(r.output_tokens)} out), est. ${fmtUsd(r.cost_usd)}`);
     if (r.prompt_version) parts.push("prompt version " + r.prompt_version);
     if (r.langsmith_run_id) parts.push("LangSmith run " + r.langsmith_run_id);
@@ -242,7 +253,7 @@ $("ask").addEventListener("submit", async (e) => {
   startLive(requestId);                                   // open the stream FIRST...
   $("go").disabled = true;
   try {
-    const res = await fetch("/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, request_id: requestId }) });
+    const res = await fetch("/support", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, request_id: requestId, llm_mode: llmMode || undefined, chaos: $("chaos").value || undefined }) });
     if (!res.ok && !model.error) model.error = `The gateway answered ${res.status}`;
   } catch { model.error = "Could not reach the gateway"; }
   finally { $("go").disabled = false; loadHistory(); scheduleRender(); }   // ...then send the request
@@ -276,5 +287,62 @@ $("stage").addEventListener("keydown", (e) => {
 });
 window.addEventListener("resize", scheduleRender);
 
+// ---------------------------------------------------------------------------------------- mock / live switch
+function setMode(mode, remember) {
+  llmMode = mode;
+  document.querySelectorAll('#mode input').forEach((r) => { r.checked = r.value === mode; });
+  if (remember) { try { localStorage.setItem("shopsense.mode", mode); } catch { /* private browsing: just don't remember it */ } }
+}
+
+async function loadConfig() {
+  try {
+    const cfg = await (await fetch("/api/config")).json();
+    GRAFANA = cfg.grafana_url || GRAFANA;
+    const live = document.querySelector('#mode input[value="live"]');
+    live.disabled = !cfg.live_available;
+    $("mode-live").title = cfg.live_available ? `Calls the real ${cfg.live_model || "Gemini"} model (costs a little per question)`
+      : "Not available: add GOOGLE_API_KEY to the .env file and restart to turn this on";
+    let saved = null;
+    try { saved = localStorage.getItem("shopsense.mode"); } catch { /* ignore */ }
+    if (saved === "live" && !cfg.live_available) saved = null;
+    chaosLabels = cfg.chaos_scenarios || {};
+    for (const [name, label] of Object.entries(chaosLabels)) $("chaos").append(h("option", { value: name }, label));
+    $("chaos").classList.toggle("hidden", Object.keys(chaosLabels).length === 0);
+    setMode(saved || cfg.default_mode || "mock", false);   // only a click is remembered, not the default
+  } catch { llmMode = null; }              // config unavailable: send no choice and let the server decide
+}
+$("chaos").addEventListener("change", (e) => e.target.classList.toggle("on", Boolean(e.target.value)));
+document.querySelectorAll('#mode input').forEach((r) => r.addEventListener("change", () => setMode(r.value, true)));
+
+// ---------------------------------------------------------------------------------------- sample traffic
+const TRAFFIC_COUNT = 12;
+let trafficTimer = null;
+
+function stopTrafficPolling() { clearInterval(trafficTimer); trafficTimer = null; $("traffic").disabled = false; }
+
+async function pollTraffic() {
+  try {
+    const s = await (await fetch("/api/traffic")).json();
+    if (s.running) { $("traffic").disabled = true; $("traffic-msg").textContent = `${s.done} of ${s.total} questions sent…`; return; }
+    stopTrafficPolling();
+    if (!s.total) { $("traffic-msg").textContent = ""; return; }
+    $("traffic-msg").replaceChildren(`Done: ${s.total - s.failed} of ${s.total} ok. Give Grafana ~15 s, then `,
+      h("a", { href: `${GRAFANA}/d/shopsense-services`, target: "_blank", rel: "noopener" }, "open the dashboards ↗"));
+  } catch { stopTrafficPolling(); $("traffic-msg").textContent = "Could not read the traffic status"; }
+}
+
+$("traffic").addEventListener("click", async () => {
+  $("traffic").disabled = true;
+  $("traffic-msg").textContent = "Starting…";
+  try {
+    const res = await fetch(`/api/traffic?count=${TRAFFIC_COUNT}`, { method: "POST" });
+    if (!res.ok && res.status !== 409) throw new Error(`HTTP ${res.status}`);   // 409 = a batch is already running: just follow it
+  } catch { stopTrafficPolling(); $("traffic-msg").textContent = "Could not start the traffic batch"; return; }
+  trafficTimer = setInterval(pollTraffic, 1500);
+  pollTraffic();
+});
+
+loadConfig();
 loadHistory();
 scheduleRender();
+fetch("/api/traffic").then((r) => r.json()).then((s) => { if (s.running) { trafficTimer = setInterval(pollTraffic, 1500); pollTraffic(); } }).catch(() => {});  // a batch started before a page refresh
